@@ -6,6 +6,50 @@ A real-time, multiplayer fantasy football draft room. Multiple users join a leag
 
 This is a portfolio project. The point is not to compete with Sleeper or ESPN — it is to demonstrate correct handling of concurrent writes, server-authoritative real-time state, and full-stack TypeScript with a real deployment. Prioritize correctness and clarity over feature count.
 
+## Current implementation status
+
+Last updated: August 2026
+
+### Completed
+
+- pnpm workspace scaffold with `apps/web`, `apps/socket-server`, `packages/shared`, and `packages/database`
+- TypeScript `strict: true` configured across the workspace
+- Next.js App Router application shell
+- Standalone Node socket-server shell
+- Shared TypeScript package and Prisma/database package
+- Local PostgreSQL 17 running through Docker Compose
+- Project environment variables managed with `.env` + direnv
+- Project-scoped Filesystem, GitHub, Playwright, and PostgreSQL MCP servers configured for Claude Code
+- Workspace installs, typechecks, and builds successfully
+- GitHub repository configured; current scaffold checkpoint committed and pushed
+
+### Current phase
+
+**Phase 1 — Foundation**
+
+Current milestone: design and implement the Prisma schema and first migration using Prisma 7 conventions.
+
+Before implementation, finalize:
+- domain models, relations, and enums
+- Auth.js persistence requirements for `User` and supporting auth models
+- `prisma.config.ts` and database client configuration
+- critical database constraints defined in the Data Model section below
+
+### Not yet implemented
+
+- Prisma application models or migrations
+- Redis local service
+- Auth.js
+- Sleeper + FFC seed pipeline
+- Zod validation
+- Vitest configuration/tests
+- GitHub Actions CI
+
+### Deferred decisions
+
+- Socket authentication strategy — decide before Phase 3
+- Railway vs. Fly.io for socket-server deployment — decide before Phase 6
+
 ## Non-negotiable engineering goals
 
 These are the things this project exists to demonstrate. Do not compromise them for velocity.
@@ -39,7 +83,14 @@ Vercel's serverless functions cannot hold persistent WebSocket connections. So t
 - **Next.js app** — pages, auth, league CRUD, everything request/response
 - **Socket server** — a long-lived Node process that owns live draft state and pushes events
 
-Keep the Prisma schema and shared TypeScript types in a location both can import. A monorepo (pnpm workspaces or Turborepo) is fine; a simpler shared `packages/` directory is also fine. Pick one early and be consistent.
+The project uses a pnpm workspace monorepo with four workspace packages:
+
+- `apps/web` — Next.js application
+- `apps/socket-server` — standalone Node realtime server
+- `packages/shared` — TypeScript types and utilities shared between both applications
+- `packages/database` — Prisma schema, generated client, and shared database access
+
+Keep shared types and database code in their respective packages rather than duplicating them between applications.
 
 ## Data model
 
@@ -53,6 +104,8 @@ Prisma schema, roughly:
 - **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentUserId, turnDeadline (timestamp)
 - **Pick** — id, draftId, pickNumber, userId, playerId, wasAutopick (bool), createdAt
 - **ChatMessage** — id, draftId, userId, body, createdAt
+
+Auth.js persistence models required by the chosen Auth.js/Prisma integration may be added alongside these domain models (for example `Account`, `Session`, and `VerificationToken`). These are authentication infrastructure models and do not replace the domain models above. Confirm the current Auth.js Prisma adapter requirements before finalizing the first migration.
 
 **Critical constraints:**
 

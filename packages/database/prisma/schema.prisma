@@ -5,5 +5,178 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+}
+
+enum ScoringFormat {
+  STANDARD
+  PPR
+  HALF_PPR
+}
+
+enum DraftType {
+  SNAKE
+  LINEAR
+}
+
+enum DraftStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  COMPLETE
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  emailVerified DateTime?
+  image         String?
+
+  accounts          Account[]
+  sessions          Session[]
+  ownedLeagues      League[]
+  leagueMemberships LeagueMember[]
+  picks             Pick[]
+  chatMessages      ChatMessage[]
+  currentTurnDrafts Draft[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model League {
+  id            String        @id @default(cuid())
+  name          String
+  ownerId       String
+  rosterSize    Int
+  timerSeconds  Int
+  scoringFormat ScoringFormat
+  draftType     DraftType
+
+  owner   User           @relation(fields: [ownerId], references: [id])
+  members LeagueMember[]
+  draft   Draft?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LeagueMember {
+  id        String @id @default(cuid())
+  leagueId  String
+  userId    String
+  draftSlot Int
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, userId])
+  @@unique([leagueId, draftSlot])
+}
+
+model Player {
+  id           String  @id @default(cuid())
+  sleeperId    String  @unique
+  fullName     String
+  position     String
+  nflTeam      String?
+  searchRank   Int?
+  injuryStatus String?
+
+  adp   PlayerAdp[]
+  picks Pick[]
+}
+
+model PlayerAdp {
+  id       String        @id @default(cuid())
+  playerId String
+  format   ScoringFormat
+  adp      Float?
+  source   String
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, format])
+}
+
+model Draft {
+  id                String      @id @default(cuid())
+  leagueId          String      @unique
+  status            DraftStatus @default(PENDING)
+  currentPickNumber Int         @default(1)
+  currentUserId     String?
+  turnDeadline      DateTime?
+
+  league      League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  currentUser User?  @relation(fields: [currentUserId], references: [id])
+
+  picks        Pick[]
+  chatMessages ChatMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Pick {
+  id          String   @id @default(cuid())
+  draftId     String
+  pickNumber  Int
+  userId      String
+  playerId    String
+  wasAutopick Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  draft  Draft  @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+  player Player @relation(fields: [playerId], references: [id])
+
+  @@unique([draftId, playerId])
+  @@unique([draftId, pickNumber])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  draftId   String
+  userId    String
+  body      String
+  createdAt DateTime @default(now())
+
+  draft Draft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
 }
