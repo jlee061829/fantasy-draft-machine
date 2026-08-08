@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: fantasy-draft-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: fantasy_user
+      POSTGRES_PASSWORD: fantasy_password
+      POSTGRES_DB: fantasy_draft
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fantasy_user -d fantasy_draft"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

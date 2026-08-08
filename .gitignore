@@ -19,7 +19,7 @@ out/
 # testing / coverage
 coverage/
 
-# macos
+# macros
 .DS_Store
 
 # ide
@@ -31,3 +31,6 @@ coverage/
 
 # claude code
 .claude/settings.local.json
+
+# playwright
+.playwright-mcp/
