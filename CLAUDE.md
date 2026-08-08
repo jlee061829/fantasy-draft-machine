@@ -22,22 +22,25 @@ Last updated: August 2026
 - Project-scoped Filesystem, GitHub, Playwright, and PostgreSQL MCP servers configured for Claude Code
 - Workspace installs, typechecks, and builds successfully
 - GitHub repository configured; current scaffold checkpoint committed and pushed
+- Prisma 7 schema implemented with all domain models plus Auth.js persistence models
+- Initial `init_schema` migration created and applied successfully
+- Prisma Client generated successfully
+- Local Postgres verified through the PostgreSQL MCP with all expected tables and critical unique constraints present
 
 ### Current phase
 
 **Phase 1 — Foundation**
 
-Current milestone: design and implement the Prisma schema and first migration using Prisma 7 conventions.
+Current milestone: finish local Phase 1 infrastructure, starting with Redis in Docker Compose, then implement Auth.js with GitHub OAuth.
 
-Before implementation, finalize:
-- domain models, relations, and enums
-- Auth.js persistence requirements for `User` and supporting auth models
-- `prisma.config.ts` and database client configuration
-- critical database constraints defined in the Data Model section below
+Current priorities:
+- add a local Redis service to Docker Compose and verify both Postgres and Redis are healthy
+- add startup environment validation
+- implement Auth.js with GitHub OAuth using the existing Prisma persistence models
+- keep the socket authentication strategy deferred until before Phase 3
 
 ### Not yet implemented
 
-- Prisma application models or migrations
 - Redis local service
 - Auth.js
 - Sleeper + FFC seed pipeline
@@ -49,6 +52,13 @@ Before implementation, finalize:
 
 - Socket authentication strategy — decide before Phase 3
 - Railway vs. Fly.io for socket-server deployment — decide before Phase 6
+
+### Settled decisions
+
+- Auth strategy: OAuth only
+- Initial OAuth provider: GitHub
+- User-facing name field: `User.name`
+- `PlayerAdp.format` reuses `ScoringFormat`
 
 ## Non-negotiable engineering goals
 
@@ -96,7 +106,7 @@ Keep shared types and database code in their respective packages rather than dup
 
 Prisma schema, roughly:
 
-- **User** — id, email, displayName, auth fields
+- **User** — id, email, name, image, emailVerified, Auth.js relations, domain relations
 - **League** — id, name, ownerId, rosterSize, timerSeconds, scoringFormat (`STANDARD | PPR | HALF_PPR`), draftType (`SNAKE | LINEAR`)
 - **LeagueMember** — id, leagueId, userId, draftSlot (int, 1-indexed). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`
 - **Player** — id, sleeperId, fullName, position, nflTeam, searchRank, injuryStatus
@@ -105,7 +115,7 @@ Prisma schema, roughly:
 - **Pick** — id, draftId, pickNumber, userId, playerId, wasAutopick (bool), createdAt
 - **ChatMessage** — id, draftId, userId, body, createdAt
 
-Auth.js persistence models required by the chosen Auth.js/Prisma integration may be added alongside these domain models (for example `Account`, `Session`, and `VerificationToken`). These are authentication infrastructure models and do not replace the domain models above. Confirm the current Auth.js Prisma adapter requirements before finalizing the first migration.
+Auth.js persistence is modeled with `Account`, `Session`, and `VerificationToken` alongside the domain models above. Authentication is OAuth-only for now, with no password field on `User`. The app uses `User.name` as the canonical user-facing name field.
 
 **Critical constraints:**
 
