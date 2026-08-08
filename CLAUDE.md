@@ -1,0 +1,186 @@
+# Fantasy Football Draft Room — Project Brief
+
+## What we're building
+
+A real-time, multiplayer fantasy football draft room. Multiple users join a league, enter a live draft room, and take turns picking players from a shared pool. Every connected client sees picks, timers, and presence updates instantly. If a user's pick timer expires, the server autopicks for them. If a user disconnects mid-draft, they can reconnect and resync without stalling the draft for everyone else.
+
+This is a portfolio project. The point is not to compete with Sleeper or ESPN — it is to demonstrate correct handling of concurrent writes, server-authoritative real-time state, and full-stack TypeScript with a real deployment. Prioritize correctness and clarity over feature count.
+
+## Non-negotiable engineering goals
+
+These are the things this project exists to demonstrate. Do not compromise them for velocity.
+
+1. **Server-authoritative state.** The client never decides whose turn it is, whether a pick is legal, or when a timer expires. The client renders what the server tells it.
+2. **Concurrent pick safety.** Two clients submitting the same player at the same instant must result in exactly one successful pick. Enforced at the database level, not just in application logic.
+3. **Reconnection resilience.** A client that drops and rejoins must resync to correct state. The draft continues regardless.
+4. **Horizontal scalability.** The socket layer must work across multiple server instances via Redis pub/sub. An in-memory socket map is not acceptable.
+5. **Tested.** Meaningful integration tests, especially around concurrency and turn order. Not just smoke tests.
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Language | TypeScript, `strict: true`, everywhere |
+| Frontend | Next.js (App Router), React, Tailwind CSS |
+| HTTP API | Next.js route handlers |
+| Realtime | Standalone Node server running Socket.IO |
+| Database | PostgreSQL, accessed via Prisma |
+| Cache / PubSub | Redis via ioredis |
+| Auth | Auth.js (NextAuth) |
+| Testing | Vitest (unit + integration), Playwright (E2E) |
+| Local dev | Docker Compose (Postgres + Redis) |
+| CI | GitHub Actions — typecheck, lint, test on every push |
+| Deploy | Next.js on Vercel; socket server + Postgres + Redis on Railway or Fly.io |
+
+### Why two processes
+
+Vercel's serverless functions cannot hold persistent WebSocket connections. So the app runs as two deployables that share Postgres and Redis:
+
+- **Next.js app** — pages, auth, league CRUD, everything request/response
+- **Socket server** — a long-lived Node process that owns live draft state and pushes events
+
+Keep the Prisma schema and shared TypeScript types in a location both can import. A monorepo (pnpm workspaces or Turborepo) is fine; a simpler shared `packages/` directory is also fine. Pick one early and be consistent.
+
+## Data model
+
+Prisma schema, roughly:
+
+- **User** — id, email, displayName, auth fields
+- **League** — id, name, ownerId, rosterSize, timerSeconds, scoringFormat (`STANDARD | PPR | HALF_PPR`), draftType (`SNAKE | LINEAR`)
+- **LeagueMember** — id, leagueId, userId, draftSlot (int, 1-indexed). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`
+- **Player** — id, sleeperId, fullName, position, nflTeam, searchRank, injuryStatus
+- **PlayerAdp** — id, playerId, format, adp (float, nullable), source. Unique on `(playerId, format)`
+- **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentUserId, turnDeadline (timestamp)
+- **Pick** — id, draftId, pickNumber, userId, playerId, wasAutopick (bool), createdAt
+- **ChatMessage** — id, draftId, userId, body, createdAt
+
+**Critical constraints:**
+
+- Unique index on `Pick(draftId, playerId)` — the database-level guarantee against double-drafting
+- Unique index on `Pick(draftId, pickNumber)` — guarantees no duplicate pick slots
+
+Store ADP in a separate table keyed by scoring format rather than as a column on `Player`. Supporting multiple formats later is a painful migration otherwise.
+
+## Data sources
+
+All external data is fetched by a **seed script**, written to Postgres, and never called on the hot path. During a live draft the app touches only its own database and Redis.
+
+### Sleeper API — player pool
+
+Free, read-only, no authentication. Docs at `https://docs.sleeper.app`.
+
+- `GET https://api.sleeper.app/v1/players/nfl` — full player list. Large payload (several MB); Sleeper asks that it be called at most once per day. Returns an object keyed by player ID.
+- Useful fields: `player_id`, `full_name`, `position`, `team`, `search_rank`, `injury_status`, plus cross-reference IDs to other platforms.
+
+**Verify the exact field names against the live response before writing the mapper.** Do not assume the shape from memory — fetch it once, inspect it, then write the types.
+
+### Fantasy Football Calculator — ADP
+
+Free REST API, explicitly offered for third-party use. ADP is derived from live 12-team mock drafts with computer picks filtered out. Covers standard, PPR, half-PPR, 2QB, and dynasty formats.
+
+Base: `https://fantasyfootballcalculator.com/api/v1/adp/{format}` with `year` and `teams` query params. Confirm the current parameter names and response shape by fetching before coding against it.
+
+ADP is required, not optional: it determines default board ordering and drives autopick.
+
+### Name matching between the two sources
+
+Sleeper returns its own player IDs; FFC returns names and teams. Joining them is the fiddliest part of the seed script. Requirements:
+
+- Normalize: lowercase, strip punctuation, strip suffixes (Jr., Sr., II, III), collapse whitespace
+- Handle team defenses (`DEF` / `D/ST`) as a special case — they are not people
+- Handle players who changed NFL teams between data snapshots (match on name first, team as tiebreak)
+- Log unmatched FFC entries rather than silently dropping them
+- **Write unit tests for the normalizer.** This is real data-quality work and it should be tested.
+
+Players without an ADP get `null` — do not fabricate a value. Autopick falls back to `search_rank` when ADP is missing.
+
+### Later, for the optional ML phase
+
+`GET https://api.sleeper.app/v1/draft/{draft_id}/picks` returns real completed draft pick sequences. That is genuine training data for a pick-prediction model. `nflverse` (nflfastR data repos on GitHub) publishes free historical play-by-play and seasonal stats as CSV/parquet.
+
+## The draft engine
+
+This is the core of the project. Everything else is scaffolding around it.
+
+### Socket events
+
+Client → server: `draft:join`, `draft:pick`, `draft:chat`, `draft:requestState`
+
+Server → client: `draft:state` (full snapshot), `pick:made`, `turn:changed`, `timer:tick`, `draft:complete`, `user:joined`, `user:left`, `pick:rejected`
+
+Define these payloads as shared TypeScript types imported by both sides. No stringly-typed event data.
+
+### Pick submission — the critical path
+
+Every pick runs inside a single database transaction:
+
+1. Load the draft row with a row lock (`SELECT ... FOR UPDATE` via Prisma's transaction API)
+2. Assert `draft.status === ACTIVE`
+3. Assert `draft.currentUserId === submittingUserId`
+4. Assert the player is not already picked in this draft
+5. Insert the `Pick`
+6. Compute the next picker and update `draft.currentPickNumber`, `currentUserId`, `turnDeadline`
+7. Commit
+
+If the transaction fails on the unique constraint, emit `pick:rejected` to that client only. Never let a failed pick corrupt draft state or stall the room.
+
+### Turn order
+
+Snake: odd rounds go slot 1 → N, even rounds go N → 1. Linear: always 1 → N. Write this as a pure function `getPickerForPickNumber(pickNumber, numTeams, draftType)` and **unit test it directly**, especially at round boundaries — that is where snake logic breaks.
+
+### Timers
+
+The server owns the deadline. Store `turnDeadline` on the draft row and mirror it in Redis with a TTL. Clients receive the deadline timestamp and render their own countdown — they never report expiry.
+
+When a deadline passes, the server autopicks: the best available player by ADP (ascending), falling back to `search_rank`. Mark the pick `wasAutopick: true`.
+
+Use a single interval on the socket server that checks for expired deadlines, not one timer per draft.
+
+### Multi-instance fanout
+
+Socket.IO's Redis adapter so that events published by one instance reach clients connected to another. This must be in place before deploy — test it by running two socket server processes locally against the same Redis.
+
+## Build phases
+
+Do not move to the next phase until the current one's exit criterion is met.
+
+**Phase 1 — Foundation.** Next.js + TypeScript strict scaffold. Prisma schema and first migration. Docker Compose with Postgres and Redis. Auth.js working end to end. Seed script pulling Sleeper players and FFC ADP into the database.
+*Done when: you can sign up, log in, and query seeded players with ADP attached.*
+
+**Phase 2 — League management.** Create a league. Join by invite code. Member list with draft slots. Commissioner-only settings. Authorization enforced server-side on every mutation, not by hiding UI.
+*Done when: two separate accounts can create and join the same league.*
+
+**Phase 3 — Draft engine.** The socket server, the event protocol, transactional pick submission, snake turn order, server-owned timers, autopick, reconnect resync.
+*Done when: two browsers complete a full draft including a timer expiry and a mid-draft refresh, and the concurrency test passes.*
+
+**Phase 4 — Client experience.** Live draft board. Available players panel with search and position filter. My-roster view. Pick timer. Chat. Presence indicators. Optimistic pick updates that roll back on `pick:rejected`.
+*Done when: it feels responsive and nothing desyncs or flickers.*
+
+**Phase 5 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.
+*Done when: CI is green and two socket instances run safely against one Redis.*
+
+**Phase 6 — Deploy.** Next.js to Vercel. Socket server, Postgres, Redis to Railway or Fly. Environment config, CORS, production migrations, a real URL.
+*Done when: you can send a friend the link and draft with them.*
+
+**Phase 7 — ML layer (only after everything above works).** Options, in increasing ambition: a value-over-replacement recommender (statistical, no training); a trained pick-likelihood model served from a small Python FastAPI service; or an LLM pick explainer using the Anthropic API with structured output validation, response caching, and graceful degradation when the call fails. If building the LLM version, the engineering *around* the model — validation, caching, cost tracking, fallback — is the interesting part.
+
+## Conventions
+
+- TypeScript `strict: true`. No `any`. No non-null assertions without a comment justifying them.
+- All draft mutations go through the transactional pick path described above. Never write a `Pick` outside it.
+- Shared types live in one place and are imported by both the Next app and the socket server. Do not duplicate type definitions.
+- Zod for validating all external input: socket payloads, API request bodies, and the shape of data coming back from Sleeper and FFC.
+- Prisma migrations are checked in. Never edit the database schema by hand.
+- Environment variables validated at startup — fail loudly on boot, not lazily at first use.
+- Conventional commits.
+
+## Working preferences
+
+- **Write the failing test first for the hard parts.** Specifically: the concurrency test (fire ~50 simultaneous pick requests for the same player, assert exactly one succeeds) and the snake-order test. I want to see them fail before they pass.
+- When implementing the transaction logic, timer authority, or reconnect resync, explain the reasoning in comments. I need to be able to re-derive these in an interview.
+- Prefer boring, explicit code over clever abstractions.
+- Ask before adding a dependency that isn't in the stack table above.
+
+## Explicitly out of scope
+
+Trades, waivers, weekly scoring, season-long league management, mobile apps, payments. This is a draft room. Keep it a draft room.
