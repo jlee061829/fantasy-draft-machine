@@ -32,20 +32,28 @@ Last updated: August 2026
 - Database-backed Auth.js sessions verified end to end
 - GitHub OAuth verified to persist linked `User`, `Account`, and `Session` records
 - Sign-in and sign-out flow verified through the Next.js app
+- Seed pipeline data-contract/testing foundation:
+  - verified live 2026 Sleeper and Fantasy Football Calculator ADP response shapes
+  - added Zod schemas for consumed Sleeper/FFC fields
+  - added pure player-name normalization
+  - added Vitest configuration with 16 normalization tests covering suffixes, initials, apostrophes, curly apostrophes, hyphens, punctuation, and whitespace
 
 ### Current phase
 
 **Phase 1 — Foundation**
 
-CCurrent milestone: implement the player seed pipeline using Sleeper player data and Fantasy Football Calculator ADP data.
+Current milestone: implement and test deterministic matching between Sleeper players and Fantasy Football Calculator ADP records.
 
 Current priorities:
 
-- implement Sleeper player ingestion into `Player`
-- implement Fantasy Football Calculator ADP ingestion into `PlayerAdp`
-- normalize player names and join Sleeper players to FFC ADP records
-- add focused Vitest tests for name normalization and ADP matching edge cases
-- verify seeded players can be queried with ADP attached
+- filter Sleeper data to fantasy-relevant positions: QB, RB, WR, TE, K, DEF
+- normalize cross-source position differences such as Sleeper `K` vs FFC `PK`
+- match individual players primarily by normalized name
+- match team defenses by NFL team code rather than name
+- use team/position as secondary signals for ambiguous matches, not as unconditional rejection criteria
+- explicitly report unmatched and ambiguous FFC records
+- add focused Vitest coverage for matching behavior
+- keep network fetching and Prisma writes out of this milestone
 - keep the socket authentication strategy deferred until before Phase 3
 
 ### Not yet implemented
@@ -245,6 +253,14 @@ Do not move to the next phase until the current one's exit criterion is met.
 - Prisma migrations are checked in. Never edit the database schema by hand.
 - Environment variables validated at startup — fail loudly on boot, not lazily at first use.
 - Conventional commits.
+
+### ADP conventions
+
+- Supported scoring formats are `STANDARD` (non-PPR), `HALF_PPR`, and `PPR`.
+- ADP varies by scoring format only in this application, not by league size.
+- Use the 12-team Fantasy Football Calculator feed as the canonical ADP source for all league sizes.
+- Store one `PlayerAdp` record per `(playerId, format)`.
+- League size is not part of `PlayerAdp` identity and must not affect which ADP dataset is used.
 
 ## Working preferences
 
