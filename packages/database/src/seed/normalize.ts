@@ -4,6 +4,8 @@ const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
 // so this function is never called with a defense name.
 export function normalizePlayerName(fullName: string): string {
   const cleaned = fullName
+    .normalize("NFD") // decompose accented letters, e.g. ñ -> n + combining tilde
+    .replace(/\p{M}/gu, "") // drop the combining marks NFD split off, e.g. Piñeiro -> Pineiro
     .toLowerCase()
     .replace(/[^\p{L}\s]/gu, "") // strips periods, hyphens, straight/curly apostrophes, etc.
     .replace(/\s+/g, " ")

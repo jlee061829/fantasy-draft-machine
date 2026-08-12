@@ -37,12 +37,20 @@ Last updated: August 2026
   - added Zod schemas for consumed Sleeper/FFC fields
   - added pure player-name normalization
   - added Vitest configuration with 16 normalization tests covering suffixes, initials, apostrophes, curly apostrophes, hyphens, punctuation, and whitespace
+- Deterministic Sleeper ↔ FFC matching layer implemented:
+  - fantasy position normalization
+  - NFL team-code normalization
+  - name-based player matching
+  - DEF matching by team code
+  - team/position ambiguity tiebreakers
+  - explicit matched/unmatched/ambiguous results
+  - 45 total seed-pipeline tests passing
 
 ### Current phase
 
 **Phase 1 — Foundation**
 
-Current milestone: implement and test deterministic matching between Sleeper players and Fantasy Football Calculator ADP records.
+Current milestone: implement the actual 2026 seed runner that fetches Sleeper + FFC data, validates it, matches records, and upserts `Player` / `PlayerAdp` into Postgres.
 
 Current priorities:
 

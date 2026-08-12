@@ -55,4 +55,17 @@ describe("normalizePlayerName", () => {
   it("combines an apostrophe and a suffix in the same name", () => {
     expect(normalizePlayerName("O'Dell Beckham Jr.")).toBe("odell beckham");
   });
+
+  it("normalizes accented and unaccented forms of the same name to the same value", () => {
+    expect(normalizePlayerName("Eddy Piñeiro")).toBe(
+      normalizePlayerName("Eddy Pineiro"),
+    );
+  });
+
+  it.each([
+    ["Eddy Piñeiro", "eddy pineiro"],
+    ["José Nuñez", "jose nunez"],
+  ])("strips diacritics in %s", (input, expected) => {
+    expect(normalizePlayerName(input)).toBe(expected);
+  });
 });

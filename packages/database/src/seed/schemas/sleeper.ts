@@ -1,7 +1,10 @@
 import { z } from "zod";
 
-// Sleeper labels team defenses with position "DEF" and omits full_name for
-// them entirely (only first_name/last_name are set, e.g. "Houston"/"Texans").
+// Sleeper labels team defenses with position "DEF" and omits full_name and
+// search_rank for them entirely (only first_name/last_name are set, e.g.
+// "Houston"/"Texans") — verified against the live payload, where both keys
+// are absent (not null) on all 32 DEF entries and present on every other
+// fantasy-relevant entry.
 export const FANTASY_POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"] as const;
 
 // The live endpoint returns ~12k entries covering every roster position
@@ -16,7 +19,9 @@ export const sleeperPlayerSchema = z.object({
   full_name: z.string().nullish(),
   position: z.enum(FANTASY_POSITIONS),
   team: z.string().nullable(),
-  search_rank: z.number().nullable(),
+  // Omitted (not null) on DEF entries — normalized to null so downstream
+  // code only ever handles number | null, never undefined.
+  search_rank: z.number().nullish().transform((v) => v ?? null),
   injury_status: z.string().nullable(),
 });
 
