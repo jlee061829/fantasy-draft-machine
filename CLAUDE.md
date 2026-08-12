@@ -45,30 +45,52 @@ Last updated: August 2026
   - team/position ambiguity tiebreakers
   - explicit matched/unmatched/ambiguous results
   - 45 total seed-pipeline tests passing
+  - 2026 Sleeper + Fantasy Football Calculator seed runner implemented:
+  - fetches and validates live Sleeper player data
+  - filters Sleeper to QB, RB, WR, TE, K, and DEF
+  - fetches STANDARD, HALF_PPR, and PPR ADP from FFC
+  - matches FFC ADP records deterministically to canonical Sleeper players
+  - reports unmatched and ambiguous records before persistence
+  - persists Player and PlayerAdp data atomically using batched writes
+  - maintains exactly one PlayerAdp row per `(playerId, format)`, using null ADP when no current match exists
+  - seed reruns are idempotent
+- Sleeper live-contract handling updated for omitted DEF `search_rank` values
+- Unicode diacritic normalization added for cross-source player-name matching
+- Seed-pipeline test suite expanded to 48 passing tests
+- 2026 production-like seed verified successfully:
+  - 4,262 fantasy-relevant Sleeper players persisted
+  - STANDARD: 205/205 FFC entries matched
+  - HALF_PPR: 208/208 FFC entries matched
+  - PPR: 256/256 FFC entries matched
+  - zero unmatched records
+  - zero ambiguous records
+  - 12,786 PlayerAdp rows persisted (4,262 players × 3 scoring formats)
+  - zero duplicate `(playerId, format)` rows
+  - second seed run produced unchanged row counts, confirming idempotency
+- Authenticated `/players` verification route implemented
+- Authenticated application code verified to query PPR PlayerAdp records with related Player data through Prisma
+- Phase 1 exit criterion satisfied
 
 ### Current phase
 
-**Phase 1 — Foundation**
+**Phase 1 — Foundation — COMPLETE**
 
-Current milestone: implement the actual 2026 seed runner that fetches Sleeper + FFC data, validates it, matches records, and upserts `Player` / `PlayerAdp` into Postgres.
+Phase 1 exit criterion satisfied: users can authenticate with GitHub and authenticated application code can query seeded 2026 NFL players with scoring-format-specific ADP attached.
 
-Current priorities:
-
-- filter Sleeper data to fantasy-relevant positions: QB, RB, WR, TE, K, DEF
-- normalize cross-source position differences such as Sleeper `K` vs FFC `PK`
-- match individual players primarily by normalized name
-- match team defenses by NFL team code rather than name
-- use team/position as secondary signals for ambiguous matches, not as unconditional rejection criteria
-- explicitly report unmatched and ambiguous FFC records
-- add focused Vitest coverage for matching behavior
-- keep network fetching and Prisma writes out of this milestone
-- keep the socket authentication strategy deferred until before Phase 3
+Next phase: **Phase 2 — League Management**
 
 ### Not yet implemented
 
-- Sleeper + FFC seed pipeline
-- Vitest configuration/tests
+- league creation and join-by-invite-code flows
+- league membership and draft-slot management
+- league settings/configuration UI
+- Socket.IO draft protocol and realtime draft engine
+- Redis-backed Socket.IO scaling / timer coordination
+- draft room UI
+- autopick
+- reconnect/resync behavior
 - GitHub Actions CI
+- ML recommendation system
 
 ### Deferred decisions
 
@@ -84,6 +106,18 @@ Current priorities:
 - User-facing name field: `User.name`
 - Prisma 7 runtime access: `@prisma/adapter-pg`
 - `PlayerAdp.format` reuses `ScoringFormat`
+- Supported scoring formats: `STANDARD` (non-PPR), `HALF_PPR`, and `PPR`
+- ADP varies by scoring format only in this application, not by league size
+- Fantasy Football Calculator's 12-team feed is the canonical ADP source for all league sizes
+- 2026 is the current seed-data season
+- Sleeper is the canonical source for player identity
+- Draftable player positions are QB, RB, WR, TE, K, and DEF; IDP is not supported
+- Team defenses match across sources by normalized NFL team code
+- Individual players match primarily by normalized player name
+- Team and position are secondary tiebreakers for ambiguous cross-source matches
+- Unmatched or ambiguous records are never silently guessed
+- Every Player has one PlayerAdp row per supported scoring format; missing current ADP is represented by `adp = null`
+- Seed persistence is idempotent and atomic across all three scoring formats
 
 ## Non-negotiable engineering goals
 
