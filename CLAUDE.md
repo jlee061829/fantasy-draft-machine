@@ -26,25 +26,31 @@ Last updated: August 2026
 - Initial `init_schema` migration created and applied successfully
 - Prisma Client generated successfully
 - Local Postgres verified through the PostgreSQL MCP with all expected tables and critical unique constraints present
+- Local Redis 8 running through Docker Compose
+- Prisma 7 runtime client configured with `@prisma/adapter-pg`
+- Auth.js v5 implemented with GitHub OAuth and the Prisma adapter
+- Database-backed Auth.js sessions verified end to end
+- GitHub OAuth verified to persist linked `User`, `Account`, and `Session` records
+- Sign-in and sign-out flow verified through the Next.js app
 
 ### Current phase
 
 **Phase 1 — Foundation**
 
-Current milestone: finish local Phase 1 infrastructure, starting with Redis in Docker Compose, then implement Auth.js with GitHub OAuth.
+CCurrent milestone: implement the player seed pipeline using Sleeper player data and Fantasy Football Calculator ADP data.
 
 Current priorities:
-- add a local Redis service to Docker Compose and verify both Postgres and Redis are healthy
-- add startup environment validation
-- implement Auth.js with GitHub OAuth using the existing Prisma persistence models
+
+- implement Sleeper player ingestion into `Player`
+- implement Fantasy Football Calculator ADP ingestion into `PlayerAdp`
+- normalize player names and join Sleeper players to FFC ADP records
+- add focused Vitest tests for name normalization and ADP matching edge cases
+- verify seeded players can be queried with ADP attached
 - keep the socket authentication strategy deferred until before Phase 3
 
 ### Not yet implemented
 
-- Redis local service
-- Auth.js
 - Sleeper + FFC seed pipeline
-- Zod validation
 - Vitest configuration/tests
 - GitHub Actions CI
 
@@ -57,7 +63,10 @@ Current priorities:
 
 - Auth strategy: OAuth only
 - Initial OAuth provider: GitHub
+- Auth.js session strategy: database-backed sessions
+- Auth.js persistence: Prisma adapter
 - User-facing name field: `User.name`
+- Prisma 7 runtime access: `@prisma/adapter-pg`
 - `PlayerAdp.format` reuses `ScoringFormat`
 
 ## Non-negotiable engineering goals
