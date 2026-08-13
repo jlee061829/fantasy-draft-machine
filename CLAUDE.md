@@ -44,7 +44,7 @@ Last updated: August 2026
   - DEF matching by team code
   - team/position ambiguity tiebreakers
   - explicit matched/unmatched/ambiguous results
-  - 45 total seed-pipeline tests passing
+  - 51 total seed-pipeline tests passing
   - 2026 Sleeper + Fantasy Football Calculator seed runner implemented:
   - fetches and validates live Sleeper player data
   - filters Sleeper to QB, RB, WR, TE, K, and DEF
@@ -70,20 +70,61 @@ Last updated: August 2026
 - Authenticated `/players` verification route implemented
 - Authenticated application code verified to query PPR PlayerAdp records with related Player data through Prisma
 - Phase 1 exit criterion satisfied
+- Phase 2 Milestone 2.1 — authenticated league creation:
+  - added authenticated `POST /api/leagues` Route Handler
+  - added strict Zod validation for league-creation request bodies
+  - league name is trimmed and constrained to 1–50 characters
+  - roster size is constrained to 8–25 with a default of 16
+  - pick timer is constrained to 10–300 seconds with a default of 60
+  - supported scoring formats remain `STANDARD`, `HALF_PPR`, and `PPR`
+  - supported draft types remain `SNAKE` and `LINEAR`
+  - unknown request fields are rejected rather than silently stripped
+  - invalid request bodies return `400`; unauthenticated requests return `401`
+  - `ownerId`, `userId`, and `draftSlot` are server-controlled and never accepted from the client
+  - league ownership is derived exclusively from the authenticated Auth.js session
+  - League and creator LeagueMember are created atomically in one Prisma interactive transaction
+  - league creator is automatically assigned `draftSlot = 1`
+  - explicit league-creation response DTO implemented instead of returning a raw Prisma object
+  - minimal authenticated `/leagues/new` creation UI implemented for verification
+- Phase 2 testing foundation:
+  - added Vitest configuration for `apps/web`
+  - added dedicated `fantasy_draft_test` PostgreSQL database for integration tests
+  - added Docker initialization for automatically creating the test database on fresh Postgres volumes
+  - test `DATABASE_URL` is loaded into `process.env` before `@fdm/database` initializes
+  - destructive test cleanup hard-fails unless connected specifically to `fantasy_draft_test`
+  - web test files run serially because they currently share the same physical test database
+  - league-creation schema, route, and real-Postgres integration tests implemented
+  - 25 web test cases passing across 3 test files
+- Milestone 2.1 verification completed:
+  - authenticated league creation verified through the running application
+  - persisted League and LeagueMember rows verified directly in the development PostgreSQL database
+  - creator ownership and `draftSlot = 1` verified
+  - unauthenticated league creation verified to return `401`
+  - authenticated invalid league input verified to return `400`
+  - authenticated attempts to submit server-controlled `ownerId` / `draftSlot` fields verified to return `400`
+  - workspace typecheck and build pass
 
 ### Current phase
 
-**Phase 1 — Foundation — COMPLETE**
+**Phase 2 — League Management — IN PROGRESS**
 
-Phase 1 exit criterion satisfied: users can authenticate with GitHub and authenticated application code can query seeded 2026 NFL players with scoring-format-specific ADP attached.
+Milestone 2.1 — Authenticated League Creation — COMPLETE.
 
-Next phase: **Phase 2 — League Management**
+Authenticated users can create leagues through `POST /api/leagues`. The creator's identity is derived from the Auth.js session, and the League plus creator LeagueMember are persisted atomically. The creator receives `draftSlot = 1`.
+
+Current milestone: **Milestone 2.2 — Invite Code + Join**
+
+Next objective: add invite-code infrastructure and allow a second authenticated account to join an existing league using its invite code.
+
+Phase 2 exit criterion remains: two separate accounts can create and join the same league.
 
 ### Not yet implemented
 
-- league creation and join-by-invite-code flows
-- league membership and draft-slot management
-- league settings/configuration UI
+- invite-code generation/storage and join-by-invite-code flow
+- joining-member draft-slot assignment beyond the creator's existing `draftSlot = 1`
+- league member list/detail experience
+- commissioner-only league settings mutations and configuration UI
+- draft-slot reordering/management beyond initial sequential assignment
 - Socket.IO draft protocol and realtime draft engine
 - Redis-backed Socket.IO scaling / timer coordination
 - draft room UI
@@ -118,6 +159,21 @@ Next phase: **Phase 2 — League Management**
 - Unmatched or ambiguous records are never silently guessed
 - Every Player has one PlayerAdp row per supported scoring format; missing current ADP is represented by `adp = null`
 - Seed persistence is idempotent and atomic across all three scoring formats
+- League HTTP mutations use Next.js Route Handlers; realtime draft mutations remain the socket server's responsibility
+- League-creation endpoint: `POST /api/leagues`
+- League-creation request bodies use strict Zod validation; unknown fields are rejected
+- Invalid/malformed league-creation input returns HTTP `400`
+- Unauthenticated league-creation requests return HTTP `401`
+- Server-controlled fields such as `ownerId`, `userId`, and `draftSlot` are never accepted from client request bodies
+- League ownership is derived from the authenticated Auth.js session
+- League creation and creator membership creation occur atomically in one Prisma interactive transaction
+- League creator receives `draftSlot = 1`
+- League names are not unique
+- League name validation: trimmed, 1–50 characters
+- League roster size validation: integer 8–25, default 16
+- League pick timer validation: integer 10–300 seconds, default 60
+- Real-Postgres integration tests use a separate `fantasy_draft_test` database, never the development `fantasy_draft` database
+- Destructive integration-test cleanup must hard-fail unless connected specifically to `fantasy_draft_test`
 
 ## Non-negotiable engineering goals
 
@@ -160,6 +216,38 @@ The project uses a pnpm workspace monorepo with four workspace packages:
 - `packages/database` — Prisma schema, generated client, and shared database access
 
 Keep shared types and database code in their respective packages rather than duplicating them between applications.
+
+### HTTP mutation conventions
+
+League management is request/response CRUD and belongs in the Next.js application, not the socket server.
+
+Current pattern:
+
+- Route Handlers own HTTP/auth/input-validation concerns.
+- Feature service functions own database/domain mutations.
+- Route Handlers authenticate with `auth()` and derive user identity from the session.
+- Request bodies are validated with strict Zod schemas before reaching service functions.
+- Client input never controls server-owned identity, authorization, or draft-slot fields.
+- Service functions return deliberately shaped DTOs rather than exposing arbitrary Prisma records.
+- Multi-row mutations that must preserve an invariant use Prisma transactions.
+
+Current league-creation structure:
+
+- `apps/web/app/api/leagues/route.ts` — authenticated HTTP wrapper
+- `apps/web/lib/leagues/schema.ts` — league-creation input validation
+- `apps/web/lib/leagues/create-league.ts` — transactional league-creation service
+- `apps/web/app/leagues/new/` — minimal manual-verification UI
+
+### Integration testing conventions
+
+- `apps/web` has its own Vitest configuration.
+- Database integration tests run against real PostgreSQL using the dedicated `fantasy_draft_test` database.
+- Never run destructive test cleanup against the development `fantasy_draft` database.
+- Test helpers must verify the active database name before destructive cleanup and fail loudly if it is not `fantasy_draft_test`.
+- The test database uses the same checked-in Prisma migrations as development; do not maintain a separate test schema.
+- The test `DATABASE_URL` must be present in `process.env` before `@fdm/database` initializes its Prisma singleton.
+- Current DB-backed web test files run serially because they share one physical test database.
+- Do not introduce transaction/dependency-injection machinery solely to manufacture artificial rollback tests.
 
 ## Data model
 
@@ -269,7 +357,16 @@ Do not move to the next phase until the current one's exit criterion is met.
 **Phase 1 — Foundation.** Next.js + TypeScript strict scaffold. Prisma schema and first migration. Docker Compose with Postgres and Redis. Auth.js working end to end. Seed script pulling Sleeper players and FFC ADP into the database.
 *Done when: you can sign up, log in, and query seeded players with ADP attached.*
 
-**Phase 2 — League management.** Create a league. Join by invite code. Member list with draft slots. Commissioner-only settings. Authorization enforced server-side on every mutation, not by hiding UI.
+**Phase 2 — League management. — IN PROGRESS**
+Create a league. Join by invite code. Member list with draft slots. Commissioner-only settings. Authorization enforced server-side on every mutation, not by hiding UI.
+
+Milestones:
+- **2.1 Authenticated League Creation — COMPLETE**
+- **2.2 Invite Code + Join — CURRENT**
+- **2.3 League Detail + Members — NOT STARTED**
+- **2.4 Commissioner Settings — NOT STARTED**
+- **2.5 Two-Account Phase Verification — NOT STARTED**
+
 *Done when: two separate accounts can create and join the same league.*
 
 **Phase 3 — Draft engine.** The socket server, the event protocol, transactional pick submission, snake turn order, server-owned timers, autopick, reconnect resync.
