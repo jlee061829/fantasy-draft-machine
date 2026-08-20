@@ -85,6 +85,8 @@ model League {
   name          String
   ownerId       String
   rosterSize    Int
+  teamCount     Int
+  inviteCode    String        @unique
   timerSeconds  Int
   scoringFormat ScoringFormat
   draftType     DraftType

@@ -28,11 +28,13 @@ export type AggregateLeague = {
 
 export type LeagueAvgAggregateOutputType = {
   rosterSize: number | null
+  teamCount: number | null
   timerSeconds: number | null
 }
 
 export type LeagueSumAggregateOutputType = {
   rosterSize: number | null
+  teamCount: number | null
   timerSeconds: number | null
 }
 
@@ -41,6 +43,8 @@ export type LeagueMinAggregateOutputType = {
   name: string | null
   ownerId: string | null
   rosterSize: number | null
+  teamCount: number | null
+  inviteCode: string | null
   timerSeconds: number | null
   scoringFormat: $Enums.ScoringFormat | null
   draftType: $Enums.DraftType | null
@@ -53,6 +57,8 @@ export type LeagueMaxAggregateOutputType = {
   name: string | null
   ownerId: string | null
   rosterSize: number | null
+  teamCount: number | null
+  inviteCode: string | null
   timerSeconds: number | null
   scoringFormat: $Enums.ScoringFormat | null
   draftType: $Enums.DraftType | null
@@ -65,6 +71,8 @@ export type LeagueCountAggregateOutputType = {
   name: number
   ownerId: number
   rosterSize: number
+  teamCount: number
+  inviteCode: number
   timerSeconds: number
   scoringFormat: number
   draftType: number
@@ -76,11 +84,13 @@ export type LeagueCountAggregateOutputType = {
 
 export type LeagueAvgAggregateInputType = {
   rosterSize?: true
+  teamCount?: true
   timerSeconds?: true
 }
 
 export type LeagueSumAggregateInputType = {
   rosterSize?: true
+  teamCount?: true
   timerSeconds?: true
 }
 
@@ -89,6 +99,8 @@ export type LeagueMinAggregateInputType = {
   name?: true
   ownerId?: true
   rosterSize?: true
+  teamCount?: true
+  inviteCode?: true
   timerSeconds?: true
   scoringFormat?: true
   draftType?: true
@@ -101,6 +113,8 @@ export type LeagueMaxAggregateInputType = {
   name?: true
   ownerId?: true
   rosterSize?: true
+  teamCount?: true
+  inviteCode?: true
   timerSeconds?: true
   scoringFormat?: true
   draftType?: true
@@ -113,6 +127,8 @@ export type LeagueCountAggregateInputType = {
   name?: true
   ownerId?: true
   rosterSize?: true
+  teamCount?: true
+  inviteCode?: true
   timerSeconds?: true
   scoringFormat?: true
   draftType?: true
@@ -212,6 +228,8 @@ export type LeagueGroupByOutputType = {
   name: string
   ownerId: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -247,6 +265,8 @@ export type LeagueWhereInput = {
   name?: Prisma.StringFilter<"League"> | string
   ownerId?: Prisma.StringFilter<"League"> | string
   rosterSize?: Prisma.IntFilter<"League"> | number
+  teamCount?: Prisma.IntFilter<"League"> | number
+  inviteCode?: Prisma.StringFilter<"League"> | string
   timerSeconds?: Prisma.IntFilter<"League"> | number
   scoringFormat?: Prisma.EnumScoringFormatFilter<"League"> | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFilter<"League"> | $Enums.DraftType
@@ -262,6 +282,8 @@ export type LeagueOrderByWithRelationInput = {
   name?: Prisma.SortOrder
   ownerId?: Prisma.SortOrder
   rosterSize?: Prisma.SortOrder
+  teamCount?: Prisma.SortOrder
+  inviteCode?: Prisma.SortOrder
   timerSeconds?: Prisma.SortOrder
   scoringFormat?: Prisma.SortOrder
   draftType?: Prisma.SortOrder
@@ -274,12 +296,14 @@ export type LeagueOrderByWithRelationInput = {
 
 export type LeagueWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  inviteCode?: string
   AND?: Prisma.LeagueWhereInput | Prisma.LeagueWhereInput[]
   OR?: Prisma.LeagueWhereInput[]
   NOT?: Prisma.LeagueWhereInput | Prisma.LeagueWhereInput[]
   name?: Prisma.StringFilter<"League"> | string
   ownerId?: Prisma.StringFilter<"League"> | string
   rosterSize?: Prisma.IntFilter<"League"> | number
+  teamCount?: Prisma.IntFilter<"League"> | number
   timerSeconds?: Prisma.IntFilter<"League"> | number
   scoringFormat?: Prisma.EnumScoringFormatFilter<"League"> | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFilter<"League"> | $Enums.DraftType
@@ -288,13 +312,15 @@ export type LeagueWhereUniqueInput = Prisma.AtLeast<{
   owner?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
   members?: Prisma.LeagueMemberListRelationFilter
   draft?: Prisma.XOR<Prisma.DraftNullableScalarRelationFilter, Prisma.DraftWhereInput> | null
-}, "id">
+}, "id" | "inviteCode">
 
 export type LeagueOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   name?: Prisma.SortOrder
   ownerId?: Prisma.SortOrder
   rosterSize?: Prisma.SortOrder
+  teamCount?: Prisma.SortOrder
+  inviteCode?: Prisma.SortOrder
   timerSeconds?: Prisma.SortOrder
   scoringFormat?: Prisma.SortOrder
   draftType?: Prisma.SortOrder
@@ -315,6 +341,8 @@ export type LeagueScalarWhereWithAggregatesInput = {
   name?: Prisma.StringWithAggregatesFilter<"League"> | string
   ownerId?: Prisma.StringWithAggregatesFilter<"League"> | string
   rosterSize?: Prisma.IntWithAggregatesFilter<"League"> | number
+  teamCount?: Prisma.IntWithAggregatesFilter<"League"> | number
+  inviteCode?: Prisma.StringWithAggregatesFilter<"League"> | string
   timerSeconds?: Prisma.IntWithAggregatesFilter<"League"> | number
   scoringFormat?: Prisma.EnumScoringFormatWithAggregatesFilter<"League"> | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeWithAggregatesFilter<"League"> | $Enums.DraftType
@@ -326,6 +354,8 @@ export type LeagueCreateInput = {
   id?: string
   name: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -341,6 +371,8 @@ export type LeagueUncheckedCreateInput = {
   name: string
   ownerId: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -354,6 +386,8 @@ export type LeagueUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -369,6 +403,8 @@ export type LeagueUncheckedUpdateInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   ownerId?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -383,6 +419,8 @@ export type LeagueCreateManyInput = {
   name: string
   ownerId: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -394,6 +432,8 @@ export type LeagueUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -406,6 +446,8 @@ export type LeagueUncheckedUpdateManyInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   ownerId?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -428,6 +470,8 @@ export type LeagueCountOrderByAggregateInput = {
   name?: Prisma.SortOrder
   ownerId?: Prisma.SortOrder
   rosterSize?: Prisma.SortOrder
+  teamCount?: Prisma.SortOrder
+  inviteCode?: Prisma.SortOrder
   timerSeconds?: Prisma.SortOrder
   scoringFormat?: Prisma.SortOrder
   draftType?: Prisma.SortOrder
@@ -437,6 +481,7 @@ export type LeagueCountOrderByAggregateInput = {
 
 export type LeagueAvgOrderByAggregateInput = {
   rosterSize?: Prisma.SortOrder
+  teamCount?: Prisma.SortOrder
   timerSeconds?: Prisma.SortOrder
 }
 
@@ -445,6 +490,8 @@ export type LeagueMaxOrderByAggregateInput = {
   name?: Prisma.SortOrder
   ownerId?: Prisma.SortOrder
   rosterSize?: Prisma.SortOrder
+  teamCount?: Prisma.SortOrder
+  inviteCode?: Prisma.SortOrder
   timerSeconds?: Prisma.SortOrder
   scoringFormat?: Prisma.SortOrder
   draftType?: Prisma.SortOrder
@@ -457,6 +504,8 @@ export type LeagueMinOrderByAggregateInput = {
   name?: Prisma.SortOrder
   ownerId?: Prisma.SortOrder
   rosterSize?: Prisma.SortOrder
+  teamCount?: Prisma.SortOrder
+  inviteCode?: Prisma.SortOrder
   timerSeconds?: Prisma.SortOrder
   scoringFormat?: Prisma.SortOrder
   draftType?: Prisma.SortOrder
@@ -466,6 +515,7 @@ export type LeagueMinOrderByAggregateInput = {
 
 export type LeagueSumOrderByAggregateInput = {
   rosterSize?: Prisma.SortOrder
+  teamCount?: Prisma.SortOrder
   timerSeconds?: Prisma.SortOrder
 }
 
@@ -564,6 +614,8 @@ export type LeagueCreateWithoutOwnerInput = {
   id?: string
   name: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -577,6 +629,8 @@ export type LeagueUncheckedCreateWithoutOwnerInput = {
   id?: string
   name: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -620,6 +674,8 @@ export type LeagueScalarWhereInput = {
   name?: Prisma.StringFilter<"League"> | string
   ownerId?: Prisma.StringFilter<"League"> | string
   rosterSize?: Prisma.IntFilter<"League"> | number
+  teamCount?: Prisma.IntFilter<"League"> | number
+  inviteCode?: Prisma.StringFilter<"League"> | string
   timerSeconds?: Prisma.IntFilter<"League"> | number
   scoringFormat?: Prisma.EnumScoringFormatFilter<"League"> | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFilter<"League"> | $Enums.DraftType
@@ -631,6 +687,8 @@ export type LeagueCreateWithoutMembersInput = {
   id?: string
   name: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -645,6 +703,8 @@ export type LeagueUncheckedCreateWithoutMembersInput = {
   name: string
   ownerId: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -673,6 +733,8 @@ export type LeagueUpdateWithoutMembersInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -687,6 +749,8 @@ export type LeagueUncheckedUpdateWithoutMembersInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   ownerId?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -699,6 +763,8 @@ export type LeagueCreateWithoutDraftInput = {
   id?: string
   name: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -713,6 +779,8 @@ export type LeagueUncheckedCreateWithoutDraftInput = {
   name: string
   ownerId: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -741,6 +809,8 @@ export type LeagueUpdateWithoutDraftInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -755,6 +825,8 @@ export type LeagueUncheckedUpdateWithoutDraftInput = {
   name?: Prisma.StringFieldUpdateOperationsInput | string
   ownerId?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -767,6 +839,8 @@ export type LeagueCreateManyOwnerInput = {
   id?: string
   name: string
   rosterSize: number
+  teamCount: number
+  inviteCode: string
   timerSeconds: number
   scoringFormat: $Enums.ScoringFormat
   draftType: $Enums.DraftType
@@ -778,6 +852,8 @@ export type LeagueUpdateWithoutOwnerInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -791,6 +867,8 @@ export type LeagueUncheckedUpdateWithoutOwnerInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -804,6 +882,8 @@ export type LeagueUncheckedUpdateManyWithoutOwnerInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   name?: Prisma.StringFieldUpdateOperationsInput | string
   rosterSize?: Prisma.IntFieldUpdateOperationsInput | number
+  teamCount?: Prisma.IntFieldUpdateOperationsInput | number
+  inviteCode?: Prisma.StringFieldUpdateOperationsInput | string
   timerSeconds?: Prisma.IntFieldUpdateOperationsInput | number
   scoringFormat?: Prisma.EnumScoringFormatFieldUpdateOperationsInput | $Enums.ScoringFormat
   draftType?: Prisma.EnumDraftTypeFieldUpdateOperationsInput | $Enums.DraftType
@@ -847,6 +927,8 @@ export type LeagueSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   name?: boolean
   ownerId?: boolean
   rosterSize?: boolean
+  teamCount?: boolean
+  inviteCode?: boolean
   timerSeconds?: boolean
   scoringFormat?: boolean
   draftType?: boolean
@@ -863,6 +945,8 @@ export type LeagueSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extens
   name?: boolean
   ownerId?: boolean
   rosterSize?: boolean
+  teamCount?: boolean
+  inviteCode?: boolean
   timerSeconds?: boolean
   scoringFormat?: boolean
   draftType?: boolean
@@ -876,6 +960,8 @@ export type LeagueSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extens
   name?: boolean
   ownerId?: boolean
   rosterSize?: boolean
+  teamCount?: boolean
+  inviteCode?: boolean
   timerSeconds?: boolean
   scoringFormat?: boolean
   draftType?: boolean
@@ -889,6 +975,8 @@ export type LeagueSelectScalar = {
   name?: boolean
   ownerId?: boolean
   rosterSize?: boolean
+  teamCount?: boolean
+  inviteCode?: boolean
   timerSeconds?: boolean
   scoringFormat?: boolean
   draftType?: boolean
@@ -896,7 +984,7 @@ export type LeagueSelectScalar = {
   updatedAt?: boolean
 }
 
-export type LeagueOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "ownerId" | "rosterSize" | "timerSeconds" | "scoringFormat" | "draftType" | "createdAt" | "updatedAt", ExtArgs["result"]["league"]>
+export type LeagueOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "name" | "ownerId" | "rosterSize" | "teamCount" | "inviteCode" | "timerSeconds" | "scoringFormat" | "draftType" | "createdAt" | "updatedAt", ExtArgs["result"]["league"]>
 export type LeagueInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   owner?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   members?: boolean | Prisma.League$membersArgs<ExtArgs>
@@ -922,6 +1010,8 @@ export type $LeaguePayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
     name: string
     ownerId: string
     rosterSize: number
+    teamCount: number
+    inviteCode: string
     timerSeconds: number
     scoringFormat: $Enums.ScoringFormat
     draftType: $Enums.DraftType
@@ -1357,6 +1447,8 @@ export interface LeagueFieldRefs {
   readonly name: Prisma.FieldRef<"League", 'String'>
   readonly ownerId: Prisma.FieldRef<"League", 'String'>
   readonly rosterSize: Prisma.FieldRef<"League", 'Int'>
+  readonly teamCount: Prisma.FieldRef<"League", 'Int'>
+  readonly inviteCode: Prisma.FieldRef<"League", 'String'>
   readonly timerSeconds: Prisma.FieldRef<"League", 'Int'>
   readonly scoringFormat: Prisma.FieldRef<"League", 'ScoringFormat'>
   readonly draftType: Prisma.FieldRef<"League", 'DraftType'>

@@ -103,6 +103,47 @@ Last updated: August 2026
   - authenticated invalid league input verified to return `400`
   - authenticated attempts to submit server-controlled `ownerId` / `draftSlot` fields verified to return `400`
   - workspace typecheck and build pass
+- Phase 2 Milestone 2.2 — Invite Code + Join:
+  - added `League.inviteCode` as a required unique field
+  - added `League.teamCount` as the league manager/team capacity, distinct from `rosterSize`
+  - `teamCount` validation: integer 4–20, default 12
+  - invite codes are 8 uppercase characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`
+  - invite-code input is trimmed and normalized to uppercase
+  - invite-code validation uses the exact settled alphabet; ambiguous characters `0`, `1`, `I`, `L`, and `O` are rejected
+  - invite-code generation uses Node `crypto.randomInt`
+  - invite-code uniqueness is enforced by the database and creation retries invite-code collisions up to 5 times
+  - added authenticated `POST /api/leagues/join`
+  - join requests accept only `{ inviteCode }`; `userId`, `leagueId`, and `draftSlot` remain server-controlled
+  - joining user identity is derived exclusively from the authenticated Auth.js session
+  - well-formed unknown invite codes return `404`
+  - duplicate membership returns `409`
+  - full leagues return `409`
+  - league joins run inside a Prisma interactive transaction
+  - the target League row is locked with `SELECT ... FOR UPDATE` before duplicate, capacity, and slot checks
+  - concurrent joins for the same league are serialized without blocking joins to unrelated leagues
+  - joining members receive the lowest available positive `draftSlot` in `1..teamCount`
+  - slot assignment fills gaps rather than assuming `memberCount + 1`
+  - existing DB unique constraints on `(leagueId, userId)` and `(leagueId, draftSlot)` remain the final integrity backstops
+  - `P2002` handling is constraint-specific:
+    - `(leagueId, userId)` → already-member conflict
+    - `(leagueId, draftSlot)` → join-conflict `409`
+    - unrelated unique errors are not silently reclassified
+  - `/leagues/new` now exposes `teamCount` and displays the generated invite code
+  - added minimal authenticated `/leagues/join` UI
+- Milestone 2.2 database migration:
+  - added `teamCount` and `inviteCode` through a checked-in Prisma migration
+  - existing League rows were backfilled with `teamCount = 12`
+  - existing League rows received collision-checked invite codes using the same application alphabet
+  - the same migration was applied to `fantasy_draft` and `fantasy_draft_test`
+- Milestone 2.2 testing and verification:
+  - 59 `apps/web` tests passing
+  - join integration tests run against real PostgreSQL in `fantasy_draft_test`
+  - concurrent-capacity test verifies a 4-team league never exceeds 4 members and produces slots `{1,2,3,4}`
+  - concurrent same-user join test verifies exactly one membership is created
+  - gap-fill test verifies occupied slots `{1,2,4}` assign the next member slot `3`
+  - duplicate join manually verified through the running application to return HTTP `409`
+  - dev database verified to retain exactly one creator membership after the failed duplicate join
+  - workspace typecheck and build pass
 
 ### Current phase
 
@@ -110,21 +151,29 @@ Last updated: August 2026
 
 Milestone 2.1 — Authenticated League Creation — COMPLETE.
 
-Authenticated users can create leagues through `POST /api/leagues`. The creator's identity is derived from the Auth.js session, and the League plus creator LeagueMember are persisted atomically. The creator receives `draftSlot = 1`.
+Milestone 2.2 — Invite Code + Join — COMPLETE.
 
-Current milestone: **Milestone 2.2 — Invite Code + Join**
+Authenticated users can now:
+- create leagues through `POST /api/leagues`
+- receive a unique invite code
+- join leagues through `POST /api/leagues/join`
+- receive a concurrency-safe draft slot
+- be rejected correctly for duplicate membership or full capacity
 
-Next objective: add invite-code infrastructure and allow a second authenticated account to join an existing league using its invite code.
+The original create/join Phase 2 exit criterion is now satisfied at the backend/integration level, but Phase 2 remains in progress because league detail/member display, commissioner-only settings, draft-slot management, and final phase verification are not yet complete.
 
-Phase 2 exit criterion remains: two separate accounts can create and join the same league.
+Current milestone: **Milestone 2.3 — League Detail + Members**
+
+Next objective: add a league detail experience that lets authenticated league members view league settings and the current member list with draft slots, with server-side access control.
 
 ### Not yet implemented
 
-- invite-code generation/storage and join-by-invite-code flow
-- joining-member draft-slot assignment beyond the creator's existing `draftSlot = 1`
-- league member list/detail experience
+- league detail page and member list
+- persistent invite-code display from the league detail experience
 - commissioner-only league settings mutations and configuration UI
-- draft-slot reordering/management beyond initial sequential assignment
+- draft-slot management/reordering beyond initial creator assignment and join-time lowest-available-slot assignment
+- member removal/kicking, if later deemed necessary for Phase 2 scope
+- final Phase 2 end-to-end verification
 - Socket.IO draft protocol and realtime draft engine
 - Redis-backed Socket.IO scaling / timer coordination
 - draft room UI
@@ -174,6 +223,25 @@ Phase 2 exit criterion remains: two separate accounts can create and join the sa
 - League pick timer validation: integer 10–300 seconds, default 60
 - Real-Postgres integration tests use a separate `fantasy_draft_test` database, never the development `fantasy_draft` database
 - Destructive integration-test cleanup must hard-fail unless connected specifically to `fantasy_draft_test`
+- `League.rosterSize` means players per fantasy roster; it is not league manager capacity
+- `League.teamCount` is the league manager/team capacity
+- `teamCount` validation: integer 4–20, default 12
+- each League has a required unique immutable `inviteCode`
+- invite codes are 8 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`
+- invite-code input is case-insensitive by trimming and uppercasing before lookup
+- malformed invite codes using characters outside the exact settled alphabet return `400`
+- well-formed but unknown invite codes return `404`
+- league join endpoint: `POST /api/leagues/join`
+- join request body contains only `inviteCode`
+- join identity is derived from the authenticated Auth.js session; clients never control `userId`, `leagueId`, or `draftSlot`
+- duplicate league membership returns `409`
+- league-at-capacity returns `409`
+- league join concurrency is serialized with a row lock on the target `League`
+- joining members receive the lowest available draft slot in `1..teamCount`
+- draft-slot assignment does not assume slots are contiguous
+- `(leagueId, userId)` and `(leagueId, draftSlot)` remain database-level unique constraints
+- join-time Prisma `P2002` handling is constraint-specific, not generic
+- invite-code rotation is deferred; invite codes are immutable for now
 
 ## Non-negotiable engineering goals
 
@@ -237,6 +305,43 @@ Current league-creation structure:
 - `apps/web/lib/leagues/schema.ts` — league-creation input validation
 - `apps/web/lib/leagues/create-league.ts` — transactional league-creation service
 - `apps/web/app/leagues/new/` — minimal manual-verification UI
+
+### League join concurrency
+
+League joining is server-authoritative and concurrency-sensitive.
+
+For `POST /api/leagues/join`:
+
+1. authenticate the request
+2. validate the strict `{ inviteCode }` body
+3. start a Prisma interactive transaction
+4. load and lock the target League row with `SELECT ... FOR UPDATE`
+5. reject an existing membership
+6. load current LeagueMember draft slots
+7. reject if member count has reached `teamCount`
+8. compute the lowest free draft slot in `1..teamCount`
+9. create the LeagueMember
+10. commit
+
+The League row is the serialization point. Concurrent joins to the same league wait on that row lock; joins to different leagues proceed independently.
+
+Do not replace this with an application-level mutex or Redis lock.
+
+Database unique constraints remain defense-in-depth:
+- `(leagueId, userId)`
+- `(leagueId, draftSlot)`
+
+### Invite-code conventions
+
+- Length: 8
+- Alphabet: `ABCDEFGHJKMNPQRSTUVWXYZ23456789`
+- Stored uppercase
+- User input is trimmed and uppercased before validation/lookup
+- Generation uses Node `crypto.randomInt`
+- `League.inviteCode` is database-unique
+- League creation retries invite-code collisions up to 5 times
+- Existing rows are backfilled through migrations using the same alphabet and explicit collision checks
+- No invite-code rotation in current scope
 
 ### Integration testing conventions
 
@@ -358,16 +463,19 @@ Do not move to the next phase until the current one's exit criterion is met.
 *Done when: you can sign up, log in, and query seeded players with ADP attached.*
 
 **Phase 2 — League management. — IN PROGRESS**
+
 Create a league. Join by invite code. Member list with draft slots. Commissioner-only settings. Authorization enforced server-side on every mutation, not by hiding UI.
 
 Milestones:
 - **2.1 Authenticated League Creation — COMPLETE**
-- **2.2 Invite Code + Join — CURRENT**
-- **2.3 League Detail + Members — NOT STARTED**
-- **2.4 Commissioner Settings — NOT STARTED**
-- **2.5 Two-Account Phase Verification — NOT STARTED**
+- **2.2 Invite Code + Join — COMPLETE**
+- **2.3 League Detail + Members — CURRENT**
+- **2.4 Commissioner Settings + Draft-Slot Management — NOT STARTED**
+- **2.5 Final Phase Verification — NOT STARTED**
 
-*Done when: two separate accounts can create and join the same league.*
+The original create/join criterion is satisfied, but Phase 2 remains open until the remaining league-management scope is complete.
+
+*Done when: league creation/join, member visibility, commissioner-only settings, draft-slot management, and final authorization verification are all working correctly.*
 
 **Phase 3 — Draft engine.** The socket server, the event protocol, transactional pick submission, snake turn order, server-owned timers, autopick, reconnect resync.
 *Done when: two browsers complete a full draft including a timer expiry and a mid-draft refresh, and the concurrency test passes.*

@@ -21,6 +21,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
   return {
     name: "Route Test League",
     rosterSize: 16,
+    teamCount: 12,
     timerSeconds: 60,
     scoringFormat: "PPR",
     draftType: "SNAKE",
@@ -76,9 +77,13 @@ describe("POST /api/leagues", () => {
 
     expect(response.status).toBe(201);
     expect(body.league.ownerId).toBe(user.id);
+    expect(body.league.teamCount).toBe(12);
+    expect(typeof body.league.inviteCode).toBe("string");
+    expect(body.league.inviteCode).toHaveLength(8);
     expect(body.membership.draftSlot).toBe(1);
 
     const league = await prisma.league.findUnique({ where: { id: body.league.id } });
     expect(league?.ownerId).toBe(user.id);
+    expect(league?.inviteCode).toBe(body.league.inviteCode);
   });
 });

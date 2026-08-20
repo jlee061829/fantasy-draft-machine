@@ -135,6 +135,8 @@ export const LeagueScalarFieldEnum = {
   name: 'name',
   ownerId: 'ownerId',
   rosterSize: 'rosterSize',
+  teamCount: 'teamCount',
+  inviteCode: 'inviteCode',
   timerSeconds: 'timerSeconds',
   scoringFormat: 'scoringFormat',
   draftType: 'draftType',
