@@ -652,7 +652,7 @@ Request:
 Prisma schema, roughly:
 
 - **User** — id, email, name, image, emailVerified, Auth.js relations, domain relations
-- **League** — id, name, ownerId, rosterSize, timerSeconds, scoringFormat (`STANDARD | PPR | HALF_PPR`), draftType (`SNAKE | LINEAR`)
+- **League** — id, name, ownerId, rosterSize, teamCount, inviteCode, timerSeconds, scoringFormat (`STANDARD | PPR | HALF_PPR`), draftType (`SNAKE | LINEAR`)
 - **LeagueMember** — id, leagueId, userId, draftSlot (int, 1-indexed). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`
 - **Player** — id, sleeperId, fullName, position, nflTeam, searchRank, injuryStatus
 - **PlayerAdp** — id, playerId, format, adp (float, nullable), source. Unique on `(playerId, format)`
