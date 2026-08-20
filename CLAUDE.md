@@ -207,43 +207,80 @@ Last updated: August 2026
   - workspace typecheck and build pass
   - manual verification completed for owner-only controls, successful settings persistence, unauthenticated `401`, nonexistent-league `404`, and dev-database persistence
   - non-owner `403`, multi-member reorder behavior, and team-count edge cases are covered by real-Postgres automated tests
+- Phase 2 Milestone 2.5 — Final Phase Verification:
+  - audited the complete Phase 2 league-management implementation against `CLAUDE.md` and found no repository/documentation drift
+  - verified the complete Phase 2 authorization matrix across unauthenticated users, authenticated non-members, LeagueMembers, and league owners
+  - audited all Phase 2 HTTP/domain-error mappings for consistent `400`, `401`, `403`, `404`, `409`, and unexpected `500` behavior
+  - audited Phase 2 database/application invariants:
+    - `(leagueId, userId)` membership uniqueness is DB-enforced
+    - `(leagueId, draftSlot)` uniqueness is DB-enforced
+    - invite-code uniqueness is DB-enforced
+    - `teamCount`, slot-range, contiguous reorder, and capacity invariants are application-enforced behind the shared League-row serialization lock
+    - transactional mutations leave no partial state on failure
+  - audited all five important real-Postgres concurrency scenarios:
+    - concurrent joins near capacity
+    - concurrent duplicate joins by the same user
+    - simultaneous commissioner reorders
+    - reorder racing with join
+    - `teamCount` decrease racing with join
+  - confirmed league DTOs expose explicit response shapes rather than arbitrary Prisma records
+  - confirmed User email and Auth.js persistence fields are not exposed by league/member DTOs
+  - confirmed no Phase 3 draft/socket/Redis functionality was introduced during Phase 2
+  - final `apps/web` suite passes: 13 test files / 125 tests
+  - workspace-wide typecheck passes
+  - workspace-wide build passes
+  - Prisma migration status is clean/up to date
+  - final single-account browser verification passed for create, invite-code display, league detail, duplicate join rejection, commissioner settings, reorder controls, signed-out fallback, nonexistent-league handling, and persisted dev-database state
+  - multi-user authorization and concurrency behavior are verified by real-Postgres automated tests rather than requiring additional OAuth accounts
+- Milestone 2.5 test-harness fix:
+  - final verification exposed an environment-precedence issue in the `apps/web` test command
+  - direnv exports the development `DATABASE_URL`, and Node `--env-file=.env.test` does not override an already-existing environment variable
+  - the existing `assertUsingTestDatabase()` safety guard correctly prevented destructive test cleanup from running against `fantasy_draft`
+  - `apps/web` test script now unsets inherited `DATABASE_URL` before loading `.env.test`
+  - normal `pnpm --filter @fdm/web test` now deterministically targets `fantasy_draft_test` even when the parent shell points at the development database
+  - the test-database safety guard remains unchanged and mandatory
 
 ### Current phase
 
-**Phase 2 — League Management — IN PROGRESS**
+**Phase 2 — League Management — COMPLETE**
 
-Milestone 2.1 — Authenticated League Creation — COMPLETE.
+Completed milestones:
 
-Milestone 2.2 — Invite Code + Join — COMPLETE.
+- Milestone 2.1 — Authenticated League Creation — COMPLETE
+- Milestone 2.2 — Invite Code + Join — COMPLETE
+- Milestone 2.3 — League Detail + Members — COMPLETE
+- Milestone 2.4 — Commissioner Settings + Draft-Slot Management — COMPLETE
+- Milestone 2.5 — Final Phase Verification — COMPLETE
 
-Milestone 2.3 — League Detail + Members — COMPLETE.
-
-Milestone 2.4 — Commissioner Settings + Draft-Slot Management — COMPLETE.
-
-Current milestone: **Milestone 2.5 — Final Phase Verification**
-
-Current application capabilities:
+Phase 2 capabilities:
 - authenticated users can create leagues
+- league creators become the first LeagueMember at `draftSlot = 1`
 - leagues have unique invite codes and explicit `teamCount`
-- authenticated users can join by invite code
-- join concurrency is serialized safely and assigns the lowest available draft slot
-- current LeagueMembers can view league settings, owner information, invite code, and all members ordered by draft slot
-- league owners can update supported league settings
+- authenticated users can join leagues by invite code
+- join capacity and duplicate membership are enforced
+- concurrent joins safely assign unique lowest-available draft slots
+- current LeagueMembers can view league settings, owner information, invite code, and members ordered by draft slot
+- league owners can update supported pre-draft settings
 - league owners can atomically reorder draft slots
-- all commissioner mutations are authorized server-side
-- joins, team-count changes, and slot reorders share the same League-row serialization point
+- commissioner mutations are authorized server-side
+- joins, settings changes, and reorders serialize on the same locked League row
+- Phase 2 authorization, persistence, DTO exposure, database invariants, and concurrency behavior have been fully audited and verified
 
-Next objective: perform final Phase 2 verification across create, join, read, commissioner settings, draft-slot ordering, authorization, and concurrency invariants. No new product functionality should be added unless verification exposes a gap.
+Current objective: **begin Phase 3 planning only after establishing the Phase 3 milestone breakdown from the existing project plan.**
 
-Phase 2 remains in progress until Milestone 2.5 is complete.
+Do not begin implementing Phase 3 functionality without first inspecting the existing Draft/Pick schema, socket-server foundation, shared protocol conventions, and the Phase 3 plan in this file.
 
 ### Not yet implemented
 
-- final Phase 2 end-to-end authorization/behavior verification
-- optional member removal/kicking, only if later explicitly added to scope
+- member removal/kicking — deferred; not required for completed Phase 2 scope
+- ownership transfer — deferred
+- invite-code rotation — deferred
+- draft creation/start flow
 - Socket.IO draft protocol and realtime draft engine
 - Redis-backed Socket.IO scaling / timer coordination
 - draft room UI
+- live pick submission
+- server-authoritative draft timers
 - autopick
 - reconnect/resync behavior
 - GitHub Actions CI
@@ -348,6 +385,15 @@ Phase 2 remains in progress until Milestone 2.5 is complete.
   - reorder first and then allow the join, or
   - join first and cause the stale reorder to fail with `409`
 - no schema migration is required for commissioner settings or draft-slot reordering
+- Phase 2 is complete after Milestone 2.5 final verification
+- Phase 2 multi-user and concurrency behavior may be verified through real-Postgres automated tests when additional real OAuth accounts are unavailable; additional OAuth accounts are not required solely for manual verification
+- the League row is the documented application-level serialization primitive for membership/capacity/settings/reorder invariants
+- membership uniqueness, draft-slot uniqueness, and invite-code uniqueness have database-level unique constraints
+- `teamCount` capacity, draft-slot range, contiguous reorder, and related cross-row invariants are application-enforced behind the League-row lock rather than additional database CHECK constraints
+- no additional database constraint/migration was required to close Phase 2
+- expected domain failures use explicit `400`/`401`/`403`/`404`/`409` paths; `500` is reserved for unexpected failures
+- Phase 2 DTOs use explicit allowlisted response shapes; raw Prisma records and Auth.js persistence fields are not exposed
+- Phase 2 final verification is verification-first: no implementation changes are added unless verification identifies a concrete defect
 
 ## Non-negotiable engineering goals
 
@@ -442,6 +488,31 @@ The detail query includes:
 
 Do not expose User email or Auth.js persistence fields.
 
+### Test database environment convention
+
+`apps/web` integration/concurrency tests must always run against the separate `fantasy_draft_test` PostgreSQL database.
+
+The normal command is:
+
+`pnpm --filter @fdm/web test`
+
+The `apps/web` test script intentionally removes any inherited `DATABASE_URL` before Node loads `.env.test`.
+
+Reason:
+- project shells may have the development `DATABASE_URL` exported by direnv
+- Node's `--env-file` does not override an environment variable that already exists
+- without removing the inherited value first, tests could inherit `fantasy_draft` instead of `fantasy_draft_test`
+
+Current script strategy:
+
+`env -u DATABASE_URL node --env-file=.env.test node_modules/vitest/vitest.mjs run`
+
+`.env.test` is the source of truth for the test `DATABASE_URL`.
+
+`assertUsingTestDatabase()` remains a mandatory defense-in-depth safety guard and must not be removed or weakened. Destructive test helpers refuse to operate unless the resolved database name is exactly `fantasy_draft_test`.
+
+Test files that share the physical test database remain serialized (`fileParallelism: false`); explicit concurrency tests create concurrency within an individual test.
+
 ### League join concurrency
 
 League joining is server-authoritative and concurrency-sensitive.
@@ -489,6 +560,17 @@ The League row is the serialization point for:
 - draft-slot reorders
 
 This prevents join/settings/reorder races from observing stale membership or capacity state.
+
+### Phase 2 authorization matrix
+
+| Actor | Create | Join | View league | Update settings | Reorder members |
+| --- | --- | --- | --- | --- | --- |
+| Unauthenticated | 401 | 401 | sign-in fallback | 401 | 401 |
+| Authenticated non-member | may create own league | succeeds with valid code/capacity | 404/notFound | 404 | 404 |
+| Authenticated non-owner member | may create own league | 409 if already member | 200 | 403 | 403 |
+| Authenticated owner | 201 for new league | 409 for own existing league | 200 + commissioner controls | 200 | 200 |
+
+Authorization is enforced server-side. UI visibility of commissioner controls is only a UX layer and is not considered an authorization boundary.
 
 #### Commissioner settings
 
@@ -673,31 +755,37 @@ Do not move to the next phase until the current one's exit criterion is met.
 **Phase 1 — Foundation.** Next.js + TypeScript strict scaffold. Prisma schema and first migration. Docker Compose with Postgres and Redis. Auth.js working end to end. Seed script pulling Sleeper players and FFC ADP into the database.
 *Done when: you can sign up, log in, and query seeded players with ADP attached.*
 
-**Phase 2 — League management. — IN PROGRESS**
+**Phase 2 — League Management — COMPLETE**
 
-Create a league. Join by invite code. Member list with draft slots. Commissioner-only settings. Authorization enforced server-side on every mutation, not by hiding UI.
+Goal: authenticated league creation and joining, member visibility with deterministic draft slots, commissioner-only settings and slot management, with server-side authorization and concurrency-safe persistence.
 
 Milestones:
 - **2.1 Authenticated League Creation — COMPLETE**
 - **2.2 Invite Code + Join — COMPLETE**
 - **2.3 League Detail + Members — COMPLETE**
 - **2.4 Commissioner Settings + Draft-Slot Management — COMPLETE**
-- **2.5 Final Phase Verification — CURRENT**
+- **2.5 Final Phase Verification — COMPLETE**
 
-Implemented Phase 2 surface:
+Completed Phase 2 surface:
 - authenticated league creation
-- invite-code join
-- team/member capacity
-- concurrency-safe draft-slot assignment
+- creator membership at slot 1
+- unique invite codes
+- explicit league team capacity
+- authenticated invite-code joining
+- concurrency-safe lowest-available slot assignment
 - member-only league detail
-- owner-only settings mutations
-- atomic draft-slot reordering
-- server-side authorization on every mutation
+- ordered member visibility
+- commissioner-only settings mutation
+- atomic full-order draft-slot reordering
+- server-side mutation authorization
+- shared League-row serialization across join/settings/reorder
+- real-Postgres integration and concurrency coverage
+- final authorization/invariant/data-exposure audit
+- manual end-to-end verification
 
-Phase 2 remains open only for final verification of the complete league-management flow and authorization/invariant behavior.
+**Phase 2 exit criteria satisfied.**
 
-*Done when: the full Phase 2 flow is verified end to end and all authorization, capacity, membership, and draft-slot invariants remain correct.*
-
+Phase 2 is frozen as a completed foundation unless a later phase exposes a concrete defect. New functionality should be assigned to the appropriate later phase rather than silently expanding Phase 2.
 **Phase 3 — Draft engine.** The socket server, the event protocol, transactional pick submission, snake turn order, server-owned timers, autopick, reconnect resync.
 *Done when: two browsers complete a full draft including a timer expiry and a mid-draft refresh, and the concurrency test passes.*
 
