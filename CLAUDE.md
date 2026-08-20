@@ -170,6 +170,43 @@ Last updated: August 2026
   - 70 `apps/web` tests passing
   - workspace typecheck and build pass
   - manual browser verification completed for owner detail view, member/settings rendering, nonexistent-league 404, signed-out fallback, and matching dev-database state
+- Phase 2 Milestone 2.4 — Commissioner Settings + Draft-Slot Management:
+  - added commissioner-only `PATCH /api/leagues/[leagueId]` for league settings
+  - added commissioner-only `PUT /api/leagues/[leagueId]/members/order` for full draft-slot reordering
+  - commissioner authority is derived from `League.ownerId`
+  - unauthenticated commissioner mutations return `401`
+  - nonexistent league and authenticated non-member access collapse to `404`
+  - authenticated LeagueMember who is not the owner receives `403`
+  - commissioner authorization is enforced server-side inside the same transaction as the mutation
+  - shared `authorizeLeagueOwner(...)` helper locks the target League row with `SELECT ... FOR UPDATE` before authorization/invariant checks
+  - league settings PATCH uses strict Zod validation with optional fields and no creation defaults
+  - empty settings PATCH bodies are rejected
+  - unknown settings fields are rejected
+  - editable pre-draft settings: `name`, `rosterSize`, `teamCount`, `timerSeconds`, `scoringFormat`, `draftType`
+  - `ownerId` remains server-controlled and invite codes remain immutable
+  - `teamCount` decreases are rejected if the requested value is below either:
+    - current LeagueMember count
+    - highest occupied `draftSlot`
+  - settings updates never auto-reorder or compact draft slots
+  - draft-slot reorder API accepts the desired full order as `{ memberIds: string[] }`
+  - reorder uses `LeagueMember.id` as the canonical mutation key
+  - submitted member IDs must be an exact permutation of current league membership
+  - duplicate, missing, unknown, or foreign-league membership IDs are rejected
+  - final draft slots are always derived server-side as contiguous `1..N`
+  - reorder is atomic and preserves LeagueMember IDs
+  - reorder avoids transient `(leagueId, draftSlot)` unique-constraint collisions with a two-phase negative-slot update inside one transaction
+  - joins, settings updates, and reorders all serialize on the same locked League row
+  - concurrent commissioner operations are last-writer-wins where appropriate while preserving database invariants
+- Milestone 2.4 testing and verification:
+  - added real-Postgres tests for commissioner settings, authorization, draft-slot reordering, rollback behavior, and concurrency
+  - simultaneous reorders verified to preserve one complete submitted order with no mixed/corrupted slot state
+  - reorder-vs-join race verified for both valid serialized outcomes
+  - `teamCount` decrease-vs-join boundary race verified to prevent `memberCount > teamCount`
+  - team-count floor verified against both member count and highest occupied draft slot
+  - 125 `apps/web` tests passing
+  - workspace typecheck and build pass
+  - manual verification completed for owner-only controls, successful settings persistence, unauthenticated `401`, nonexistent-league `404`, and dev-database persistence
+  - non-owner `403`, multi-member reorder behavior, and team-count edge cases are covered by real-Postgres automated tests
 
 ### Current phase
 
@@ -181,7 +218,9 @@ Milestone 2.2 — Invite Code + Join — COMPLETE.
 
 Milestone 2.3 — League Detail + Members — COMPLETE.
 
-Current milestone: **Milestone 2.4 — Commissioner Settings + Draft-Slot Management**
+Milestone 2.4 — Commissioner Settings + Draft-Slot Management — COMPLETE.
+
+Current milestone: **Milestone 2.5 — Final Phase Verification**
 
 Current application capabilities:
 - authenticated users can create leagues
@@ -189,19 +228,19 @@ Current application capabilities:
 - authenticated users can join by invite code
 - join concurrency is serialized safely and assigns the lowest available draft slot
 - current LeagueMembers can view league settings, owner information, invite code, and all members ordered by draft slot
-- non-members cannot view league details
+- league owners can update supported league settings
+- league owners can atomically reorder draft slots
+- all commissioner mutations are authorized server-side
+- joins, team-count changes, and slot reorders share the same League-row serialization point
 
-Next objective: implement commissioner-only league-setting mutations and draft-slot management with server-side authorization.
+Next objective: perform final Phase 2 verification across create, join, read, commissioner settings, draft-slot ordering, authorization, and concurrency invariants. No new product functionality should be added unless verification exposes a gap.
 
-Phase 2 remains in progress until commissioner mutations, draft-slot management, and final phase verification are complete.
+Phase 2 remains in progress until Milestone 2.5 is complete.
 
 ### Not yet implemented
 
-- commissioner-only league settings mutations and configuration UI
-- draft-slot management/reordering
-- server-side authorization for commissioner-only mutations
-- optional member removal/kicking, only if later included in Phase 2 scope
 - final Phase 2 end-to-end authorization/behavior verification
+- optional member removal/kicking, only if later explicitly added to scope
 - Socket.IO draft protocol and realtime draft engine
 - Redis-backed Socket.IO scaling / timer coordination
 - draft room UI
@@ -282,6 +321,33 @@ Phase 2 remains in progress until commissioner mutations, draft-slot management,
 - owner/commissioner status is derived from `League.ownerId`; no redundant role boolean is stored in the detail DTO
 - `/leagues/[leagueId]` is the canonical league detail route
 - Milestone 2.3 is read-only; commissioner settings and draft-slot mutations are deferred to Milestone 2.4
+- Commissioner authority is represented by `League.ownerId`; there is no separate commissioner role field
+- commissioner mutations require authentication and server-side owner authorization
+- nonexistent league and authenticated non-member commissioner mutation attempts collapse to `404`
+- authenticated LeagueMember who is not the owner receives `403` for commissioner-only mutations
+- commissioner authorization and mutation occur inside the same Prisma transaction
+- joins, commissioner settings updates, and draft-slot reorders all serialize on the target League row with `SELECT ... FOR UPDATE`
+- pre-draft editable league settings are `name`, `rosterSize`, `teamCount`, `timerSeconds`, `scoringFormat`, and `draftType`
+- `ownerId` is not client-editable
+- invite codes remain immutable; invite-code rotation is deferred
+- settings PATCH schemas use optional fields with no creation defaults
+- empty settings PATCH bodies are invalid
+- lowering `teamCount` must preserve both:
+  - `teamCount >= current LeagueMember count`
+  - `teamCount >= highest occupied draftSlot`
+- settings updates do not implicitly reorder or compact draft slots
+- draft-slot reordering uses full-order replacement, not partial slot patches
+- reorder request shape is `{ memberIds: string[] }`
+- draft-slot reorder uses `LeagueMember.id`, not `userId`, as the mutation key
+- reorder input must contain every current LeagueMember exactly once
+- server derives final draft slots as contiguous `1..N`
+- draft-slot reorder preserves LeagueMember row identity
+- transient draft-slot uniqueness collisions are avoided using temporary negative slots inside one transaction
+- concurrent reorder requests use last-writer-wins semantics while preserving a complete valid ordering
+- reorder racing with join may either:
+  - reorder first and then allow the join, or
+  - join first and cause the stale reorder to fail with `409`
+- no schema migration is required for commissioner settings or draft-slot reordering
 
 ## Non-negotiable engineering goals
 
@@ -400,6 +466,81 @@ Do not replace this with an application-level mutex or Redis lock.
 Database unique constraints remain defense-in-depth:
 - `(leagueId, userId)`
 - `(leagueId, draftSlot)`
+
+### Commissioner mutation conventions
+
+Commissioner mutations are owner-only and use `League.ownerId` as the authority source.
+
+Shared authorization/locking flow:
+
+1. start a Prisma interactive transaction
+2. lock the target League row with `SELECT ... FOR UPDATE`
+3. if the League does not exist, return the league-not-accessible path
+4. verify the requester is a LeagueMember
+5. if not a member, collapse to the same `404`
+6. if a member but `requestingUserId !== League.ownerId`, reject with `403`
+7. perform mutation-specific invariant checks
+8. write changes
+9. commit
+
+The League row is the serialization point for:
+- joins
+- league settings updates
+- draft-slot reorders
+
+This prevents join/settings/reorder races from observing stale membership or capacity state.
+
+#### Commissioner settings
+
+Endpoint:
+
+- `PATCH /api/leagues/[leagueId]`
+
+Allowed fields:
+- `name`
+- `rosterSize`
+- `teamCount`
+- `timerSeconds`
+- `scoringFormat`
+- `draftType`
+
+PATCH schemas:
+- are strict
+- use optional fields
+- do not apply creation-time defaults
+- reject empty bodies
+
+`teamCount` decreases must preserve:
+- current membership count
+- highest occupied draft slot
+
+Settings changes do not implicitly reorder members.
+
+#### Draft-slot reorder
+
+Endpoint:
+
+- `PUT /api/leagues/[leagueId]/members/order`
+
+Request:
+
+```json
+{
+  "memberIds": ["membershipA", "membershipB", "membershipC"]
+}
+```
+
+### Commissioner mutation status conventions
+
+- unauthenticated → `401`
+- nonexistent league → `404`
+- authenticated non-member → `404`
+- authenticated member but non-owner → `403`
+- malformed/invalid request body → `400`
+- `teamCount` conflicts with current membership/slot state → `409`
+- reorder membership set does not exactly match current league membership → `409`
+- unexpected draft-slot reorder conflict → `409`
+- unexpected internal/database errors → `500`
 
 ### Invite-code conventions
 
@@ -540,12 +681,22 @@ Milestones:
 - **2.1 Authenticated League Creation — COMPLETE**
 - **2.2 Invite Code + Join — COMPLETE**
 - **2.3 League Detail + Members — COMPLETE**
-- **2.4 Commissioner Settings + Draft-Slot Management — CURRENT**
-- **2.5 Final Phase Verification — NOT STARTED**
+- **2.4 Commissioner Settings + Draft-Slot Management — COMPLETE**
+- **2.5 Final Phase Verification — CURRENT**
 
-The create/join and read-only member-visibility portions are complete. Phase 2 remains open until commissioner-only mutations, draft-slot management, and final authorization verification are complete.
+Implemented Phase 2 surface:
+- authenticated league creation
+- invite-code join
+- team/member capacity
+- concurrency-safe draft-slot assignment
+- member-only league detail
+- owner-only settings mutations
+- atomic draft-slot reordering
+- server-side authorization on every mutation
 
-*Done when: league creation/join, member visibility, commissioner-only settings, draft-slot management, and final authorization verification are all working correctly.*
+Phase 2 remains open only for final verification of the complete league-management flow and authorization/invariant behavior.
+
+*Done when: the full Phase 2 flow is verified end to end and all authorization, capacity, membership, and draft-slot invariants remain correct.*
 
 **Phase 3 — Draft engine.** The socket server, the event protocol, transactional pick submission, snake turn order, server-owned timers, autopick, reconnect resync.
 *Done when: two browsers complete a full draft including a timer expiry and a mid-draft refresh, and the concurrency test passes.*

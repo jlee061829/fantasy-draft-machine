@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createLeagueInputSchema, joinLeagueInputSchema } from "./schema";
+import {
+  createLeagueInputSchema,
+  joinLeagueInputSchema,
+  reorderLeagueMembersInputSchema,
+  updateLeagueSettingsInputSchema,
+} from "./schema";
 
 function validInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -110,6 +115,104 @@ describe("joinLeagueInputSchema", () => {
     const result = joinLeagueInputSchema.safeParse({
       inviteCode: "K3F9QZ2R",
       userId: "spoofed",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("updateLeagueSettingsInputSchema", () => {
+  it("accepts a single-field partial update", () => {
+    expect(updateLeagueSettingsInputSchema.safeParse({ name: "New Name" }).success).toBe(
+      true,
+    );
+  });
+
+  it("accepts a multi-field partial update", () => {
+    expect(
+      updateLeagueSettingsInputSchema.safeParse({ name: "New Name", timerSeconds: 90 })
+        .success,
+    ).toBe(true);
+  });
+
+  it("does not apply defaults for omitted fields", () => {
+    const result = updateLeagueSettingsInputSchema.safeParse({ name: "New Name" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ name: "New Name" });
+      expect("rosterSize" in result.data).toBe(false);
+      expect("teamCount" in result.data).toBe(false);
+    }
+  });
+
+  it("rejects an empty update object", () => {
+    expect(updateLeagueSettingsInputSchema.safeParse({}).success).toBe(false);
+  });
+
+  it.each(["ownerId", "userId", "draftSlot", "inviteCode"])(
+    "rejects an otherwise-valid input containing an unexpected %s field",
+    (field) => {
+      const result = updateLeagueSettingsInputSchema.safeParse({
+        name: "New Name",
+        [field]: "spoofed",
+      });
+      expect(result.success).toBe(false);
+    },
+  );
+
+  it.each([7, 26, 1.5])("rejects out-of-range rosterSize %s", (rosterSize) => {
+    expect(updateLeagueSettingsInputSchema.safeParse({ rosterSize }).success).toBe(false);
+  });
+
+  it.each([3, 21, 1.5])("rejects out-of-range teamCount %s", (teamCount) => {
+    expect(updateLeagueSettingsInputSchema.safeParse({ teamCount }).success).toBe(false);
+  });
+
+  it.each([9, 301, 1.5])("rejects out-of-range timerSeconds %s", (timerSeconds) => {
+    expect(updateLeagueSettingsInputSchema.safeParse({ timerSeconds }).success).toBe(false);
+  });
+
+  it("rejects an invalid scoringFormat", () => {
+    expect(
+      updateLeagueSettingsInputSchema.safeParse({ scoringFormat: "BOGUS" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an invalid draftType", () => {
+    expect(updateLeagueSettingsInputSchema.safeParse({ draftType: "BOGUS" }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("reorderLeagueMembersInputSchema", () => {
+  it("accepts a well-formed ordered memberIds array", () => {
+    expect(
+      reorderLeagueMembersInputSchema.safeParse({ memberIds: ["a", "b", "c"] }).success,
+    ).toBe(true);
+  });
+
+  it("rejects an empty memberIds array", () => {
+    expect(reorderLeagueMembersInputSchema.safeParse({ memberIds: [] }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects duplicate memberIds within the submitted array", () => {
+    expect(
+      reorderLeagueMembersInputSchema.safeParse({ memberIds: ["a", "b", "a"] }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a non-array memberIds", () => {
+    expect(reorderLeagueMembersInputSchema.safeParse({ memberIds: "a,b,c" }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects an otherwise-valid input containing an unexpected field", () => {
+    const result = reorderLeagueMembersInputSchema.safeParse({
+      memberIds: ["a", "b"],
+      leagueId: "spoofed",
     });
     expect(result.success).toBe(false);
   });

@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { auth, signIn } from "../../../lib/auth";
 import { getLeagueDetail } from "../../../lib/leagues/get-league-detail";
+import { LeagueSettingsForm } from "./league-settings-form";
+import { MemberOrderForm } from "./member-order-form";
 
 // Milestone 2.3 manual-verification page: minimal, unstyled, just enough to
 // exercise getLeagueDetail as an authenticated league member. Nonexistent
@@ -68,6 +70,16 @@ export default async function LeagueDetailPage({
           </li>
         ))}
       </ol>
+
+      {session.user.id === league.ownerId && (
+        <>
+          <h2>Commissioner settings</h2>
+          <LeagueSettingsForm leagueId={league.id} settings={league} />
+
+          <h2>Draft-slot order</h2>
+          <MemberOrderForm leagueId={league.id} members={members} />
+        </>
+      )}
     </main>
   );
 }
