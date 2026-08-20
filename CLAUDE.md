@@ -144,6 +144,32 @@ Last updated: August 2026
   - duplicate join manually verified through the running application to return HTTP `409`
   - dev database verified to retain exactly one creator membership after the failed duplicate join
   - workspace typecheck and build pass
+- Phase 2 Milestone 2.3 — League Detail + Members:
+  - added read-only league detail service `getLeagueDetail(leagueId, requestingUserId)`
+  - league detail access is restricted to current `LeagueMember`s
+  - nonexistent leagues and authenticated non-member access intentionally collapse to the same not-found result
+  - authorization is enforced directly in the Prisma query predicate using league membership
+  - league detail is loaded with one Prisma query; no N+1 member/user reads
+  - member list is ordered by `draftSlot` ascending
+  - explicit `LeagueDetailResult` DTO implemented instead of returning raw Prisma records
+  - league detail exposes only safe user-facing fields (`id`, `name`, `image`); user email and Auth.js persistence data are not exposed
+  - invite code is visible to all current LeagueMembers
+  - commissioner/owner identity is derived from `League.ownerId`
+  - added read-only `/leagues/[leagueId]` Server Component page
+  - successful league creation and join flows now link to the league detail page
+  - no GET Route Handler was added; the Server Component calls the server-side service directly
+- Milestone 2.3 testing and verification:
+  - added real-Postgres integration tests for league-detail access and DTO behavior
+  - owner and non-owner LeagueMember access covered
+  - authenticated non-member and nonexistent league both verified to return no detail result
+  - member ordering by `draftSlot` verified
+  - DTO field allowlist verified to prevent accidental User-field expansion
+  - invite-code visibility for non-owner members verified
+  - page-wiring tests cover unauthenticated, authorized, non-member, and nonexistent branches
+  - `notFound()` tests use a local sentinel mock instead of depending on Next.js internal error/digest behavior
+  - 70 `apps/web` tests passing
+  - workspace typecheck and build pass
+  - manual browser verification completed for owner detail view, member/settings rendering, nonexistent-league 404, signed-out fallback, and matching dev-database state
 
 ### Current phase
 
@@ -153,27 +179,29 @@ Milestone 2.1 — Authenticated League Creation — COMPLETE.
 
 Milestone 2.2 — Invite Code + Join — COMPLETE.
 
-Authenticated users can now:
-- create leagues through `POST /api/leagues`
-- receive a unique invite code
-- join leagues through `POST /api/leagues/join`
-- receive a concurrency-safe draft slot
-- be rejected correctly for duplicate membership or full capacity
+Milestone 2.3 — League Detail + Members — COMPLETE.
 
-The original create/join Phase 2 exit criterion is now satisfied at the backend/integration level, but Phase 2 remains in progress because league detail/member display, commissioner-only settings, draft-slot management, and final phase verification are not yet complete.
+Current milestone: **Milestone 2.4 — Commissioner Settings + Draft-Slot Management**
 
-Current milestone: **Milestone 2.3 — League Detail + Members**
+Current application capabilities:
+- authenticated users can create leagues
+- leagues have unique invite codes and explicit `teamCount`
+- authenticated users can join by invite code
+- join concurrency is serialized safely and assigns the lowest available draft slot
+- current LeagueMembers can view league settings, owner information, invite code, and all members ordered by draft slot
+- non-members cannot view league details
 
-Next objective: add a league detail experience that lets authenticated league members view league settings and the current member list with draft slots, with server-side access control.
+Next objective: implement commissioner-only league-setting mutations and draft-slot management with server-side authorization.
+
+Phase 2 remains in progress until commissioner mutations, draft-slot management, and final phase verification are complete.
 
 ### Not yet implemented
 
-- league detail page and member list
-- persistent invite-code display from the league detail experience
 - commissioner-only league settings mutations and configuration UI
-- draft-slot management/reordering beyond initial creator assignment and join-time lowest-available-slot assignment
-- member removal/kicking, if later deemed necessary for Phase 2 scope
-- final Phase 2 end-to-end verification
+- draft-slot management/reordering
+- server-side authorization for commissioner-only mutations
+- optional member removal/kicking, only if later included in Phase 2 scope
+- final Phase 2 end-to-end authorization/behavior verification
 - Socket.IO draft protocol and realtime draft engine
 - Redis-backed Socket.IO scaling / timer coordination
 - draft room UI
@@ -242,6 +270,18 @@ Next objective: add a league detail experience that lets authenticated league me
 - `(leagueId, userId)` and `(leagueId, draftSlot)` remain database-level unique constraints
 - join-time Prisma `P2002` handling is constraint-specific, not generic
 - invite-code rotation is deferred; invite codes are immutable for now
+- League detail access is restricted to current `LeagueMember`s
+- authenticated non-member access and nonexistent league IDs intentionally resolve to the same not-found behavior
+- read-only league detail uses a Server Component calling a server-side service function directly; no GET Route Handler is required
+- league-detail authorization is enforced in the Prisma query predicate, not after unrestricted data is loaded
+- league detail is fetched in one Prisma query with selected relations; avoid N+1 reads
+- league members are displayed in ascending `draftSlot` order
+- all current LeagueMembers may view the persisted invite code
+- league detail exposes only safe User fields: `id`, `name`, and `image`
+- User email and Auth.js persistence data are not part of league-detail DTOs
+- owner/commissioner status is derived from `League.ownerId`; no redundant role boolean is stored in the detail DTO
+- `/leagues/[leagueId]` is the canonical league detail route
+- Milestone 2.3 is read-only; commissioner settings and draft-slot mutations are deferred to Milestone 2.4
 
 ## Non-negotiable engineering goals
 
@@ -305,6 +345,36 @@ Current league-creation structure:
 - `apps/web/lib/leagues/schema.ts` — league-creation input validation
 - `apps/web/lib/leagues/create-league.ts` — transactional league-creation service
 - `apps/web/app/leagues/new/` — minimal manual-verification UI
+
+### League detail read conventions
+
+League detail is read-only and available only to current LeagueMembers.
+
+The page route is:
+
+- `/leagues/[leagueId]`
+
+Read flow:
+
+1. authenticate with `auth()`
+2. if unauthenticated, render the existing inline sign-in fallback
+3. call `getLeagueDetail(leagueId, session.user.id)`
+4. the Prisma query requires both:
+   - matching League `id`
+   - a membership for the requesting user
+5. if no row matches, return `null`
+6. the page maps `null` to `notFound()`
+7. otherwise render the explicit League Detail DTO
+
+Nonexistent leagues and authenticated non-member access intentionally collapse to the same not-found behavior.
+
+The detail query includes:
+- league settings
+- owner `{ id, name, image }`
+- all members with selected user fields
+- members ordered by `draftSlot ASC`
+
+Do not expose User email or Auth.js persistence fields.
 
 ### League join concurrency
 
@@ -469,11 +539,11 @@ Create a league. Join by invite code. Member list with draft slots. Commissioner
 Milestones:
 - **2.1 Authenticated League Creation — COMPLETE**
 - **2.2 Invite Code + Join — COMPLETE**
-- **2.3 League Detail + Members — CURRENT**
-- **2.4 Commissioner Settings + Draft-Slot Management — NOT STARTED**
+- **2.3 League Detail + Members — COMPLETE**
+- **2.4 Commissioner Settings + Draft-Slot Management — CURRENT**
 - **2.5 Final Phase Verification — NOT STARTED**
 
-The original create/join criterion is satisfied, but Phase 2 remains open until the remaining league-management scope is complete.
+The create/join and read-only member-visibility portions are complete. Phase 2 remains open until commissioner-only mutations, draft-slot management, and final authorization verification are complete.
 
 *Done when: league creation/join, member visibility, commissioner-only settings, draft-slot management, and final authorization verification are all working correctly.*
 

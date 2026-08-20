@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 export function JoinLeagueForm() {
@@ -40,7 +41,16 @@ export function JoinLeagueForm() {
         <button type="submit">Join league</button>
       </form>
       {error && <pre>{error}</pre>}
-      {result != null && <pre>{JSON.stringify(result, null, 2)}</pre>}
+      {result != null && (
+        <div>
+          <p>
+            <Link href={`/leagues/${(result as { league?: { id?: string } }).league?.id}`}>
+              View league
+            </Link>
+          </p>
+          <pre>{JSON.stringify(result, null, 2)}</pre>
+        </div>
+      )}
     </div>
   );
 }

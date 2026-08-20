@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 export function CreateLeagueForm() {
@@ -86,6 +87,11 @@ export function CreateLeagueForm() {
         <div>
           <p>
             Invite code: <strong>{(result as { league?: { inviteCode?: string } }).league?.inviteCode}</strong>
+          </p>
+          <p>
+            <Link href={`/leagues/${(result as { league?: { id?: string } }).league?.id}`}>
+              View league
+            </Link>
           </p>
           <pre>{JSON.stringify(result, null, 2)}</pre>
         </div>
