@@ -1,10 +1,12 @@
-import type { Prisma } from "@fdm/database";
+import type { DraftType, Prisma } from "@fdm/database";
 import { LeagueNotAccessibleError, NotLeagueOwnerError } from "./errors";
 
 export interface LockedLeague {
   id: string;
   ownerId: string;
   teamCount: number;
+  timerSeconds: number;
+  draftType: DraftType;
 }
 
 // Shared by every commissioner mutation (settings update, member reorder) so
@@ -31,7 +33,7 @@ export async function authorizeLeagueOwner(
   requestingUserId: string,
 ): Promise<LockedLeague> {
   const [league] = await tx.$queryRaw<LockedLeague[]>`
-    SELECT id, "ownerId", "teamCount" FROM "League" WHERE id = ${leagueId} FOR UPDATE
+    SELECT id, "ownerId", "teamCount", "timerSeconds", "draftType" FROM "League" WHERE id = ${leagueId} FOR UPDATE
   `;
   if (!league) {
     throw new LeagueNotAccessibleError();

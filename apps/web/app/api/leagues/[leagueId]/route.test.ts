@@ -1,6 +1,7 @@
 import { prisma } from "@fdm/database";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanupLeagueTestData, createTestUser } from "../../../../test/db";
+import { startDraft } from "../../../../lib/drafts/start-draft";
 import { createLeague } from "../../../../lib/leagues/create-league";
 import { PATCH } from "./route";
 
@@ -143,5 +144,24 @@ describe("PATCH /api/leagues/[leagueId]", () => {
     const persisted = await prisma.league.findUnique({ where: { id: league.id } });
     expect(persisted?.name).toBe("Renamed League");
     expect(persisted?.timerSeconds).toBe(45);
+  });
+
+  it("returns 409 once the league's draft has started", async () => {
+    const owner = await createTestUser();
+    const { league } = await createTestLeague(owner.id, 4);
+    const others = await Promise.all([createTestUser(), createTestUser(), createTestUser()]);
+    for (let i = 0; i < others.length; i++) {
+      await prisma.leagueMember.create({
+        data: { leagueId: league.id, userId: others[i]!.id, draftSlot: i + 2 },
+      });
+    }
+    await startDraft(league.id, owner.id);
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+
+    const response = await PATCH(jsonRequest({ name: "Locked" }), ctxFor(league.id));
+
+    expect(response.status).toBe(409);
+    const unchanged = await prisma.league.findUnique({ where: { id: league.id } });
+    expect(unchanged?.name).toBe("Settings Route Test League");
   });
 });

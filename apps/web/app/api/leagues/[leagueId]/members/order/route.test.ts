@@ -1,6 +1,7 @@
 import { prisma } from "@fdm/database";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanupLeagueTestData, createTestUser } from "../../../../../../test/db";
+import { startDraft } from "../../../../../../lib/drafts/start-draft";
 import { createLeague } from "../../../../../../lib/leagues/create-league";
 import { PUT } from "./route";
 
@@ -137,5 +138,30 @@ describe("PUT /api/leagues/[leagueId]/members/order", () => {
       where: { id: otherMembership.id },
     });
     expect(persisted?.draftSlot).toBe(1);
+  });
+
+  it("returns 409 once the league's draft has started", async () => {
+    const owner = await createTestUser();
+    const other = await createTestUser();
+    const { league, membership: ownerMembership } = await createTestLeague(owner.id, 4);
+    const otherMembership = await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: other.id, draftSlot: 2 },
+    });
+    const rest = await Promise.all([createTestUser(), createTestUser()]);
+    await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: rest[0]!.id, draftSlot: 3 },
+    });
+    await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: rest[1]!.id, draftSlot: 4 },
+    });
+    await startDraft(league.id, owner.id);
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+
+    const response = await PUT(
+      jsonRequest({ memberIds: [otherMembership.id, ownerMembership.id] }),
+      ctxFor(league.id),
+    );
+
+    expect(response.status).toBe(409);
   });
 });

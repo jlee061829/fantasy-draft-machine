@@ -1,4 +1,6 @@
 import { Prisma, prisma } from "@fdm/database";
+import { DraftAlreadyStartedError } from "../drafts/errors";
+import { getDraftForLeague } from "../drafts/get-draft-for-league";
 import { authorizeLeagueOwner } from "./authorize-commissioner";
 import { ReorderConflictError, ReorderMembershipMismatchError } from "./errors";
 import type { ReorderLeagueMembersInput } from "./schema";
@@ -36,6 +38,11 @@ export async function reorderLeagueMembers(
   try {
     const members = await prisma.$transaction(async (tx) => {
       await authorizeLeagueOwner(tx, leagueId, requestingUserId);
+
+      const existingDraft = await getDraftForLeague(tx, leagueId);
+      if (existingDraft) {
+        throw new DraftAlreadyStartedError();
+      }
 
       const currentMembers = await tx.leagueMember.findMany({
         where: { leagueId },

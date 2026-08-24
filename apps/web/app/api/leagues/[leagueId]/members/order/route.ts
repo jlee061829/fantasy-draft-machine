@@ -1,4 +1,5 @@
 import { auth } from "../../../../../../lib/auth";
+import { DraftAlreadyStartedError } from "../../../../../../lib/drafts/errors";
 import {
   LeagueNotAccessibleError,
   NotLeagueOwnerError,
@@ -48,6 +49,9 @@ export async function PUT(
       return Response.json({ error: error.message }, { status: 409 });
     }
     if (error instanceof ReorderConflictError) {
+      return Response.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof DraftAlreadyStartedError) {
       return Response.json({ error: error.message }, { status: 409 });
     }
     throw error;

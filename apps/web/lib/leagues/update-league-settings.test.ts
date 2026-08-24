@@ -1,6 +1,8 @@
 import { prisma } from "@fdm/database";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupLeagueTestData, createTestUser } from "../../test/db";
+import { DraftAlreadyStartedError } from "../drafts/errors";
+import { startDraft } from "../drafts/start-draft";
 import { createLeague } from "./create-league";
 import { LeagueNotAccessibleError, NotLeagueOwnerError, TeamCountBelowMembershipError } from "./errors";
 import { updateLeagueSettings } from "./update-league-settings";
@@ -150,5 +152,24 @@ describe("updateLeagueSettings", () => {
     const result = await updateLeagueSettings(league.id, { teamCount: 20 }, owner.id);
 
     expect(result.league.teamCount).toBe(20);
+  });
+
+  it("rejects settings changes once a Draft exists and leaves the league unchanged", async () => {
+    const owner = await createTestUser();
+    const { league } = await createTestLeague(owner.id, 4);
+    const joiners = await Promise.all([createTestUser(), createTestUser(), createTestUser()]);
+    for (let i = 0; i < joiners.length; i++) {
+      await prisma.leagueMember.create({
+        data: { leagueId: league.id, userId: joiners[i]!.id, draftSlot: i + 2 },
+      });
+    }
+    await startDraft(league.id, owner.id);
+
+    await expect(
+      updateLeagueSettings(league.id, { name: "Locked League" }, owner.id),
+    ).rejects.toBeInstanceOf(DraftAlreadyStartedError);
+
+    const unchanged = await prisma.league.findUnique({ where: { id: league.id } });
+    expect(unchanged?.name).toBe("Settings Test League");
   });
 });

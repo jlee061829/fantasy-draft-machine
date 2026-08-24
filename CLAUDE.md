@@ -239,50 +239,92 @@ Last updated: August 2026
   - `apps/web` test script now unsets inherited `DATABASE_URL` before loading `.env.test`
   - normal `pnpm --filter @fdm/web test` now deterministically targets `fantasy_draft_test` even when the parent shell points at the development database
   - the test-database safety guard remains unchanged and mandatory
+- Phase 3 Milestone 3.1 — Draft Start:
+  - added commissioner-only `POST /api/leagues/[leagueId]/draft`
+  - a League has at most one Draft, enforced by existing `Draft.leagueId @unique`
+  - draft creation and start are a single operation; no separate PENDING creation flow exists
+  - successful draft start creates the Draft directly as `ACTIVE`
+  - starting a draft requires the League to be completely filled: `memberCount === teamCount`
+  - draft start derives commissioner authority exclusively from `League.ownerId`
+  - unauthenticated draft start returns `401`
+  - nonexistent league / authenticated non-member returns `404`
+  - authenticated LeagueMember who is not the owner returns `403`
+  - underfilled league returns `409`
+  - starting a league that already has a Draft returns `409`
+  - draft start runs inside a Prisma interactive transaction
+  - the League row is locked with `SELECT ... FOR UPDATE` before draft-state checks
+  - concurrent start attempts serialize on the League row; exactly one Draft may be created
+  - Draft creation initializes:
+    - `status = ACTIVE`
+    - `currentPickNumber = 1`
+    - `currentUserId` to the user occupying the computed first draft slot
+    - `turnDeadline` from server time plus `League.timerSeconds`
+  - missing first-picker state is treated as an internal invariant failure rather than silently asserted
+  - explicit `StartDraftResult` DTO implemented; no arbitrary Prisma record is returned
+- Phase 3 shared draft-order foundation:
+  - added pure `getPickerForPickNumber(pickNumber, numTeams, draftType)` to `packages/shared`
+  - supported draft types are structurally represented as `"SNAKE" | "LINEAR"` in shared domain logic
+  - `packages/shared` remains persistence-independent and does not depend on `@fdm/database`
+  - LINEAR order wraps `1..N` every round
+  - SNAKE order reverses direction at round boundaries
+  - invalid non-positive/non-integer pick numbers or team counts fail explicitly
+- Phase 3 draft-state mutation guard:
+  - once a Draft exists for a League, commissioner league-settings mutations return `409`
+  - once a Draft exists for a League, draft-slot reorder mutations return `409`
+  - league settings are not snapshotted onto Draft in the current design
+  - League remains the source of draft configuration
+  - pre-draft settings/reorder and draft start share the same League-row serialization point
+  - `DraftStatus.PAUSED` remains unused/dormant
+- Milestone 3.1 testing and verification:
+  - `apps/web`: 16 test files / 156 tests passing
+  - `packages/database`: 51 tests passing
+  - pure pick-order tests cover SNAKE and LINEAR round boundaries and invalid input
+  - real-Postgres start-draft integration tests cover successful SNAKE/LINEAR start, authorization, underfilled league, duplicate start, first-picker assignment, and deadline persistence
+  - concurrent double-start test verifies exactly one Draft row is created
+  - existing settings/reorder tests verify Draft existence locks those mutations with `409`
+  - workspace-wide typecheck passes
+  - web build passes with `/api/leagues/[leagueId]/draft` registered
+  - manual verification confirmed underfilled owner start returns `409` and creates no Draft row
+  - manual verification confirmed pre-draft settings and reorder behavior remain unaffected
+  - successful full-league start and multi-user authorization/concurrency behavior are verified through the real-Postgres automated suite
 
 ### Current phase
 
-**Phase 2 — League Management — COMPLETE**
+**Phase 3 — Realtime Draft Engine — IN PROGRESS**
 
-Completed milestones:
+Completed:
 
-- Milestone 2.1 — Authenticated League Creation — COMPLETE
-- Milestone 2.2 — Invite Code + Join — COMPLETE
-- Milestone 2.3 — League Detail + Members — COMPLETE
-- Milestone 2.4 — Commissioner Settings + Draft-Slot Management — COMPLETE
-- Milestone 2.5 — Final Phase Verification — COMPLETE
+- Phase 1 — Foundation — COMPLETE
+- Phase 2 — League Management — COMPLETE
+- Phase 3 Milestone 3.1 — Draft Start — COMPLETE
 
-Phase 2 capabilities:
-- authenticated users can create leagues
-- league creators become the first LeagueMember at `draftSlot = 1`
-- leagues have unique invite codes and explicit `teamCount`
-- authenticated users can join leagues by invite code
-- join capacity and duplicate membership are enforced
-- concurrent joins safely assign unique lowest-available draft slots
-- current LeagueMembers can view league settings, owner information, invite code, and members ordered by draft slot
-- league owners can update supported pre-draft settings
-- league owners can atomically reorder draft slots
-- commissioner mutations are authorized server-side
-- joins, settings changes, and reorders serialize on the same locked League row
-- Phase 2 authorization, persistence, DTO exposure, database invariants, and concurrency behavior have been fully audited and verified
+Current milestone: **Milestone 3.2 — Transactional Pick Submission**
 
-Current objective: **begin Phase 3 planning only after establishing the Phase 3 milestone breakdown from the existing project plan.**
+Current Phase 3 capabilities:
+- a completely filled League can be started by its commissioner
+- draft start creates the League's single Draft directly as `ACTIVE`
+- initial picker and turn deadline are server-derived
+- draft order is defined by a tested pure shared function
+- simultaneous start attempts cannot create duplicate Drafts
+- league settings and draft-slot order become immutable once a Draft exists
 
-Do not begin implementing Phase 3 functionality without first inspecting the existing Draft/Pick schema, socket-server foundation, shared protocol conventions, and the Phase 3 plan in this file.
+Next objective: implement the server-authoritative transactional pick-submission critical path before introducing Socket.IO.
+
+Phase 3 remains in progress.
 
 ### Not yet implemented
 
-- member removal/kicking — deferred; not required for completed Phase 2 scope
-- ownership transfer — deferred
-- invite-code rotation — deferred
-- draft creation/start flow
-- Socket.IO draft protocol and realtime draft engine
-- Redis-backed Socket.IO scaling / timer coordination
-- draft room UI
-- live pick submission
-- server-authoritative draft timers
+- transactional draft pick submission
+- server-authoritative current-turn validation
+- advancement of `currentPickNumber`, `currentUserId`, and `turnDeadline` after a pick
+- draft completion transition
+- Socket.IO draft protocol and realtime server
+- realtime draft state broadcast
+- server-owned timer expiry processing
 - autopick
 - reconnect/resync behavior
+- draft room UI
+- Redis-backed timer coordination / scaling as required by later phase design
 - GitHub Actions CI
 - ML recommendation system
 
@@ -394,6 +436,24 @@ Do not begin implementing Phase 3 functionality without first inspecting the exi
 - expected domain failures use explicit `400`/`401`/`403`/`404`/`409` paths; `500` is reserved for unexpected failures
 - Phase 2 DTOs use explicit allowlisted response shapes; raw Prisma records and Auth.js persistence fields are not exposed
 - Phase 2 final verification is verification-first: no implementation changes are added unless verification identifies a concrete defect
+- each League has at most one Draft; `Draft.leagueId @unique` is the database-level invariant
+- draft creation and draft start are one operation in the current product
+- draft-start endpoint: `POST /api/leagues/[leagueId]/draft`
+- a Draft is created directly as `ACTIVE`; no separate PENDING lobby/create action is implemented
+- only the League owner may start a draft
+- starting requires `LeagueMember count === League.teamCount`
+- empty manager/team slots are not supported at draft start
+- draft start uses the League row as its serialization point with `SELECT ... FOR UPDATE`
+- concurrent start attempts result in exactly one Draft
+- the first picker is derived server-side from `getPickerForPickNumber(1, teamCount, draftType)`
+- `turnDeadline` is server-owned and initialized from server time plus `League.timerSeconds`
+- League settings are not snapshotted onto Draft
+- League remains the current source of draft configuration
+- once a Draft exists, league settings and draft-slot order are immutable
+- `DraftStatus.PAUSED` is dormant; pause/resume behavior is not implemented
+- `getPickerForPickNumber` is shared persistence-independent domain logic
+- `packages/shared` must not depend on Prisma/database packages merely for domain enum types
+- no Redis or Socket.IO coordination is needed for draft start
 
 ## Non-negotiable engineering goals
 
@@ -560,6 +620,79 @@ The League row is the serialization point for:
 - draft-slot reorders
 
 This prevents join/settings/reorder races from observing stale membership or capacity state.
+
+### Draft start conventions
+
+Endpoint:
+
+- `POST /api/leagues/[leagueId]/draft`
+
+Draft start is a commissioner-only HTTP state transition, not a realtime socket event.
+
+Transaction flow:
+
+1. start a Prisma interactive transaction
+2. lock and authorize the League using the existing commissioner authorization path
+3. reject if a Draft already exists
+4. load current League membership
+5. require `memberCount === teamCount`
+6. compute the first picker using `getPickerForPickNumber`
+7. resolve the LeagueMember occupying that draft slot
+8. compute `turnDeadline` from server time plus `timerSeconds`
+9. create the Draft directly as `ACTIVE`
+10. return an explicit DTO
+11. commit
+
+Initial Draft state:
+
+- `status = ACTIVE`
+- `currentPickNumber = 1`
+- `currentUserId = first picker`
+- `turnDeadline = server time + timerSeconds`
+
+`Draft.leagueId @unique` is the database-level duplicate-draft backstop.
+
+The League row remains the shared serialization point for:
+- joining
+- commissioner settings
+- draft-slot reorder
+- draft start
+
+Once a Draft exists:
+- league settings mutation is rejected with `409`
+- draft-slot reorder is rejected with `409`
+
+No Draft settings snapshot exists in the current model.
+
+### Draft turn-order conventions
+
+Pure shared function:
+
+`getPickerForPickNumber(pickNumber, numTeams, draftType)`
+
+Returns the 1-indexed `draftSlot` that owns a given overall pick number.
+
+Inputs:
+- `pickNumber` must be a positive integer
+- `numTeams` must be a positive integer
+- `draftType` must be `SNAKE` or `LINEAR`
+
+LINEAR:
+- each round runs slots `1..N`
+
+SNAKE:
+- odd-numbered human rounds run `1..N`
+- even-numbered human rounds run `N..1`
+
+Example for 12 teams:
+- pick 12 → slot 12
+- pick 13 → slot 12
+- pick 24 → slot 1
+- pick 25 → slot 1
+
+This function lives in `packages/shared` because both web-side draft initialization and the future socket server require identical turn-order behavior.
+
+It must remain persistence-independent.
 
 ### Phase 2 authorization matrix
 
@@ -786,8 +919,22 @@ Completed Phase 2 surface:
 **Phase 2 exit criteria satisfied.**
 
 Phase 2 is frozen as a completed foundation unless a later phase exposes a concrete defect. New functionality should be assigned to the appropriate later phase rather than silently expanding Phase 2.
-**Phase 3 — Draft engine.** The socket server, the event protocol, transactional pick submission, snake turn order, server-owned timers, autopick, reconnect resync.
-*Done when: two browsers complete a full draft including a timer expiry and a mid-draft refresh, and the concurrency test passes.*
+
+**Phase 3 — Realtime Draft Engine — IN PROGRESS**
+
+Goal: implement the server-authoritative draft lifecycle, transactional picks, realtime protocol, timers/autopick, and reconnect correctness.
+
+Milestones:
+
+- **3.1 Draft Start — COMPLETE**
+- **3.2 Transactional Pick Submission — CURRENT**
+- **3.3 Socket.IO Server + Draft Protocol — PLANNED**
+- **3.4 Server-Owned Timers + Autopick — PLANNED**
+- **3.5 Reconnect/Resync — PLANNED**
+
+Later milestones remain provisional and may be combined or split based on implementation complexity. Milestone boundaries should represent meaningful correctness or vertical-capability boundaries rather than arbitrary amounts of code.
+
+Phase 3 exit criterion remains: two browser clients can complete a full draft, including timer expiry and mid-draft reconnect/refresh behavior, with concurrency invariants verified.
 
 **Phase 4 — Client experience.** Live draft board. Available players panel with search and position filter. My-roster view. Pick timer. Chat. Presence indicators. Optimistic pick updates that roll back on `pick:rejected`.
 *Done when: it feels responsive and nothing desyncs or flickers.*

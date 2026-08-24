@@ -37,6 +37,7 @@ function assertUsingTestDatabase(): void {
 // correct even if cascade configuration changes later.
 export async function cleanupLeagueTestData(): Promise<void> {
   assertUsingTestDatabase();
+  await prisma.draft.deleteMany();
   await prisma.leagueMember.deleteMany();
   await prisma.league.deleteMany();
   await prisma.user.deleteMany();

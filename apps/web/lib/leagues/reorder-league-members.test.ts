@@ -1,6 +1,8 @@
 import { prisma } from "@fdm/database";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupLeagueTestData, createTestUser } from "../../test/db";
+import { DraftAlreadyStartedError } from "../drafts/errors";
+import { startDraft } from "../drafts/start-draft";
 import { createLeague } from "./create-league";
 import { LeagueNotAccessibleError, NotLeagueOwnerError, ReorderMembershipMismatchError } from "./errors";
 import { reorderLeagueMembers } from "./reorder-league-members";
@@ -157,5 +159,35 @@ describe("reorderLeagueMembers", () => {
     await expect(
       reorderLeagueMembers(league.id, { memberIds: [ownerMembership.id] }, outsider.id),
     ).rejects.toBeInstanceOf(LeagueNotAccessibleError);
+  });
+
+  it("rejects reordering once a Draft exists and leaves order unchanged", async () => {
+    const owner = await createTestUser();
+    const other = await createTestUser();
+    const { league, membership: ownerMembership } = await createTestLeague(owner.id, 4);
+    const otherMembership = await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: other.id, draftSlot: 2 },
+    });
+    const rest = await Promise.all([createTestUser(), createTestUser()]);
+    await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: rest[0]!.id, draftSlot: 3 },
+    });
+    await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: rest[1]!.id, draftSlot: 4 },
+    });
+    await startDraft(league.id, owner.id);
+
+    const before = await currentSlots(league.id);
+
+    await expect(
+      reorderLeagueMembers(
+        league.id,
+        { memberIds: [otherMembership.id, ownerMembership.id] },
+        owner.id,
+      ),
+    ).rejects.toBeInstanceOf(DraftAlreadyStartedError);
+
+    const after = await currentSlots(league.id);
+    expect(after).toEqual(before);
   });
 });

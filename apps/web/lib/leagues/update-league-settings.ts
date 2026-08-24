@@ -1,5 +1,7 @@
 import type { DraftType, ScoringFormat } from "@fdm/database";
 import { prisma } from "@fdm/database";
+import { DraftAlreadyStartedError } from "../drafts/errors";
+import { getDraftForLeague } from "../drafts/get-draft-for-league";
 import { authorizeLeagueOwner } from "./authorize-commissioner";
 import { TeamCountBelowMembershipError } from "./errors";
 import type { UpdateLeagueSettingsInput } from "./schema";
@@ -26,6 +28,11 @@ export async function updateLeagueSettings(
 ): Promise<UpdateLeagueSettingsResult> {
   const league = await prisma.$transaction(async (tx) => {
     await authorizeLeagueOwner(tx, leagueId, requestingUserId);
+
+    const existingDraft = await getDraftForLeague(tx, leagueId);
+    if (existingDraft) {
+      throw new DraftAlreadyStartedError();
+    }
 
     if (input.teamCount !== undefined) {
       // A decrease is unsafe unless it stays at or above BOTH the current

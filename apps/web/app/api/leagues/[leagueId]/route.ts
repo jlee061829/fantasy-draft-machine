@@ -1,4 +1,5 @@
 import { auth } from "../../../../lib/auth";
+import { DraftAlreadyStartedError } from "../../../../lib/drafts/errors";
 import {
   LeagueNotAccessibleError,
   NotLeagueOwnerError,
@@ -41,6 +42,9 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/leagues/[l
       return Response.json({ error: error.message }, { status: 403 });
     }
     if (error instanceof TeamCountBelowMembershipError) {
+      return Response.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof DraftAlreadyStartedError) {
       return Response.json({ error: error.message }, { status: 409 });
     }
     throw error;
