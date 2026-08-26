@@ -28,3 +28,76 @@ export class DraftAlreadyStartedError extends Error {
     this.name = "DraftAlreadyStartedError";
   }
 }
+
+// Thrown by submitPick when the requester is a confirmed LeagueMember of an
+// existing league that simply has no Draft yet. Deliberately distinct from
+// LeagueNotAccessibleError: membership was already confirmed before this
+// check runs, so revealing "no draft yet" leaks nothing to a non-member —
+// there's no reason to collapse the two the way LeagueNotAccessibleError
+// collapses "nonexistent league" and "non-member".
+export class DraftNotFoundError extends Error {
+  constructor() {
+    super("This league does not have an active draft.");
+    this.name = "DraftNotFoundError";
+  }
+}
+
+// The Draft row exists but its status isn't ACTIVE (e.g. already COMPLETE).
+// A state conflict on an accessible resource, not an authorization failure.
+export class DraftNotActiveError extends Error {
+  constructor() {
+    super("This draft is not currently active.");
+    this.name = "DraftNotActiveError";
+  }
+}
+
+// Thrown when the requester is a real LeagueMember but Draft.currentUserId
+// belongs to someone else. Deliberately 409, not 403: unlike commissioner
+// ownership (a static fact about the league), turn ownership rotates —
+// this same user will legitimately become the current picker again later,
+// so this reads as a conflict with current draft state rather than a
+// standing permissions failure.
+export class NotOnTheClockError extends Error {
+  constructor() {
+    super("It is not currently your turn to pick.");
+    this.name = "NotOnTheClockError";
+  }
+}
+
+// The submitted playerId does not match any Player row.
+export class PlayerNotFoundError extends Error {
+  constructor() {
+    super("No player matches that id.");
+    this.name = "PlayerNotFoundError";
+  }
+}
+
+// Covers both the application-level pre-check and the
+// @@unique([draftId, playerId]) backstop, which represent the same
+// underlying fact. Under the Draft-row FOR UPDATE lock, a genuine
+// concurrent hit on this constraint is expected to be rare in practice —
+// the currentUserId turn check upstream is what actually resolves most
+// races — but the constraint remains the real guarantee regardless.
+export class PlayerAlreadyDraftedError extends Error {
+  constructor() {
+    super("This player has already been drafted.");
+    this.name = "PlayerAlreadyDraftedError";
+  }
+}
+
+// Reaching this means the LeagueMember occupying the next computed
+// draftSlot doesn't exist, despite the league having been full when its
+// Draft was started and membership being immutable for the lifetime of an
+// ACTIVE draft (no joins/leaves are possible once a Draft exists — see
+// join-league.ts's capacity check). Mirrors
+// DraftInitializationInvariantError in start-draft.ts: this indicates
+// corrupted/impossible server-side state, not a legitimate
+// client-triggerable conflict, so it's deliberately NOT one of the domain
+// errors the route maps to a 4xx — it's left to propagate as an unhandled
+// error (500).
+export class PickAdvanceInvariantError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PickAdvanceInvariantError";
+  }
+}

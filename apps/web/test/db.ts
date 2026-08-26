@@ -34,10 +34,21 @@ function assertUsingTestDatabase(): void {
 
 // Deletes explicitly in FK-safe order (children before parents) rather than
 // relying on League/LeagueMember's onDelete: Cascade, so cleanup stays
-// correct even if cascade configuration changes later.
+// correct even if cascade configuration changes later. draft.deleteMany()
+// runs first specifically because Pick/ChatMessage both have onDelete:
+// Cascade on their draftId relation — deleting Draft rows cascades those
+// away at the DB level before player.deleteMany() below would otherwise hit
+// a Pick.playerId FK violation (Pick.playerId has no cascade of its own).
+//
+// fantasy_draft_test never receives real seeded Sleeper/FFC data — the seed
+// script (packages/database's db:seed) is a manual command run against the
+// dev database only, and no automated test path calls it against this
+// database — so every Player row here is a disposable test fixture safe to
+// delete in full.
 export async function cleanupLeagueTestData(): Promise<void> {
   assertUsingTestDatabase();
   await prisma.draft.deleteMany();
+  await prisma.player.deleteMany();
   await prisma.leagueMember.deleteMany();
   await prisma.league.deleteMany();
   await prisma.user.deleteMany();
@@ -56,4 +67,18 @@ export async function createTestUser(
 ) {
   assertUsingTestDatabase();
   return prisma.user.create({ data: testUserData(overrides) });
+}
+
+export async function createTestPlayer(
+  overrides: Partial<{ fullName: string; position: string }> = {},
+) {
+  assertUsingTestDatabase();
+  const suffix = randomUUID();
+  return prisma.player.create({
+    data: {
+      sleeperId: `test-${suffix}`,
+      fullName: overrides.fullName ?? "Test Player",
+      position: overrides.position ?? "RB",
+    },
+  });
 }

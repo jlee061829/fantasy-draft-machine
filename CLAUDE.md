@@ -287,6 +287,46 @@ Last updated: August 2026
   - manual verification confirmed underfilled owner start returns `409` and creates no Draft row
   - manual verification confirmed pre-draft settings and reorder behavior remain unaffected
   - successful full-league start and multi-user authorization/concurrency behavior are verified through the real-Postgres automated suite
+- Phase 3 Milestone 3.2 — Transactional Pick Submission:
+  - added `POST /api/leagues/[leagueId]/draft/picks`
+  - request body is strict `{ playerId: string }`
+  - client cannot supply `userId`, `draftId`, `pickNumber`, `wasAutopick`, turn state, or deadline state
+  - core Prisma-dependent mutation service is `apps/web/lib/drafts/submit-pick.ts`
+  - the HTTP Route Handler is a thin adapter over the framework-independent service
+  - requester must be authenticated and a current `LeagueMember`
+  - Draft must exist and have `status = ACTIVE`
+  - requester must equal `Draft.currentUserId`
+  - manual submissions persist `wasAutopick = false`
+  - selected `Player` must exist and must not already be drafted in the Draft
+  - Draft row is locked with `SELECT ... FOR UPDATE` before mutable turn-state validation
+  - successful submission atomically creates exactly one Pick and advances Draft state
+  - concurrent submissions for the same turn serialize on the Draft row
+  - after one request consumes a turn, stale concurrent requests fail the current-picker check rather than advancing again
+  - non-final picks increment `currentPickNumber`, derive the next picker with `getPickerForPickNumber`, update `currentUserId`, and assign a new server-owned `turnDeadline`
+  - `totalPicks = League.teamCount * League.rosterSize`
+  - final pick transitions the Draft to `COMPLETE`
+  - completed Draft retains `currentPickNumber = totalPicks`
+  - completed Draft sets `currentUserId = null` and `turnDeadline = null`
+  - `@@unique([draftId, playerId])` is the database backstop against drafting a Player twice
+  - `@@unique([draftId, pickNumber])` is the database backstop against multiple Picks owning one overall pick number
+  - no schema migration was required
+  - no Socket.IO, Redis, timer-expiry processing, autopick selection, reconnect behavior, or draft-room UI was introduced
+- Milestone 3.2 verification:
+  - `apps/web`: 18 test files / 181 tests passing
+  - `packages/database`: 5 test files / 51 tests passing
+  - workspace-wide typecheck passes
+  - web build passes with `/api/leagues/[leagueId]/draft/picks` registered
+  - real-Postgres tests verify SNAKE progression across round boundaries
+  - real-Postgres tests verify LINEAR progression
+  - real-Postgres tests verify final-pick completion
+  - real-Postgres tests verify deadline advancement
+  - 20 simultaneous same-turn submissions persist exactly one Pick and advance the Draft exactly once
+  - concurrent submissions using different Players still consume the turn exactly once
+  - player-uniqueness and pick-number-uniqueness DB constraints are tested independently
+  - manual verification confirmed no-Draft requests return `404`
+  - manual verification confirmed malformed requests return `400`
+  - manual verification confirmed rejected requests leave Draft/Pick state unchanged
+  - successful multi-user and concurrency paths remain automated real-Postgres verification because the local OAuth setup has only one real account
 
 ### Current phase
 
@@ -297,36 +337,44 @@ Completed:
 - Phase 1 — Foundation — COMPLETE
 - Phase 2 — League Management — COMPLETE
 - Phase 3 Milestone 3.1 — Draft Start — COMPLETE
+- Phase 3 Milestone 3.2 — Transactional Pick Submission — COMPLETE
 
-Current milestone: **Milestone 3.2 — Transactional Pick Submission**
+Current milestone: **Milestone 3.3 — Socket.IO Server + Draft Protocol**
 
 Current Phase 3 capabilities:
 - a completely filled League can be started by its commissioner
 - draft start creates the League's single Draft directly as `ACTIVE`
 - initial picker and turn deadline are server-derived
-- draft order is defined by a tested pure shared function
+- draft order is defined by tested persistence-independent shared logic
 - simultaneous start attempts cannot create duplicate Drafts
 - league settings and draft-slot order become immutable once a Draft exists
+- authenticated LeagueMembers can submit manual picks through the HTTP pick endpoint
+- pick submission is server-authoritative and transactionally serialized on the Draft row
+- exactly one concurrent submission can consume a turn
+- successful picks atomically persist the Pick and advance Draft state
+- SNAKE and LINEAR turn progression use the shared `getPickerForPickNumber`
+- successful non-final picks receive a new server-owned turn deadline
+- the final pick atomically transitions the Draft to `COMPLETE`
+- database uniqueness constraints prevent duplicate drafted players and duplicate pick numbers
 
-Next objective: implement the server-authoritative transactional pick-submission critical path before introducing Socket.IO.
+Next objective: design and implement the Socket.IO draft protocol and realtime server while preserving the transactional pick invariants established in Milestone 3.2.
 
 Phase 3 remains in progress.
 
 ### Not yet implemented
 
-- transactional draft pick submission
-- server-authoritative current-turn validation
-- advancement of `currentPickNumber`, `currentUserId`, and `turnDeadline` after a pick
-- draft completion transition
 - Socket.IO draft protocol and realtime server
-- realtime draft state broadcast
-- server-owned timer expiry processing
-- autopick
+- realtime draft-state broadcast
+- server-owned timer-expiry processing
+- autopick selection
 - reconnect/resync behavior
 - draft room UI
 - Redis-backed timer coordination / scaling as required by later phase design
-- GitHub Actions CI
+- pause/resume behavior
+- draft/pick undo
+- roster-position enforcement if later required
 - ML recommendation system
+- GitHub Actions CI
 
 ### Deferred decisions
 
@@ -454,6 +502,19 @@ Phase 3 remains in progress.
 - `getPickerForPickNumber` is shared persistence-independent domain logic
 - `packages/shared` must not depend on Prisma/database packages merely for domain enum types
 - no Redis or Socket.IO coordination is needed for draft start
+
+- Draft-row locking is the serialization mechanism for manual pick submission
+- exactly one concurrent request may consume a given turn
+- stale concurrent requests must re-read locked Draft state and fail after another request advances the turn
+- application pre-checks improve domain errors, but database uniqueness constraints remain the final concurrency backstop
+- `(draftId, playerId)` uniqueness prevents the same Player from being drafted twice
+- `(draftId, pickNumber)` uniqueness prevents two Pick rows from owning the same overall pick
+- manual Picks always persist `wasAutopick = false`
+- total Draft length is `teamCount * rosterSize`
+- a completed Draft retains the final `currentPickNumber` and clears `currentUserId` and `turnDeadline`
+- successful non-final Picks receive a fresh server-owned deadline based on `League.timerSeconds`
+- transactional pick submission currently belongs to `apps/web`; do not import `apps/web` implementation code directly into `apps/socket-server`
+- Milestone 3.3 must explicitly determine the reusable service/package boundary before Socket.IO consumes authoritative draft mutations
 
 ## Non-negotiable engineering goals
 
@@ -664,6 +725,83 @@ Once a Draft exists:
 
 No Draft settings snapshot exists in the current model.
 
+### Pick submission conventions
+
+Endpoint:
+
+- `POST /api/leagues/[leagueId]/draft/picks`
+
+Request:
+
+`{ "playerId": "<Player.id>" }`
+
+All turn ownership and draft-state fields are server-owned.
+
+The client does not submit:
+- `userId`
+- `draftId`
+- `pickNumber`
+- `draftSlot`
+- `wasAutopick`
+- `currentUserId`
+- `turnDeadline`
+
+Manual pick submission flow:
+
+1. verify the requester is a current `LeagueMember`
+2. lock the League's Draft row with `SELECT ... FOR UPDATE`
+3. require an existing Draft
+4. require `Draft.status = ACTIVE`
+5. require `Draft.currentUserId === requestingUserId`
+6. load immutable League draft configuration
+7. require the selected Player to exist
+8. reject a Player already drafted in this Draft
+9. create the Pick at `Draft.currentPickNumber` with `wasAutopick = false`
+10. determine whether the Pick is final
+11. for a non-final Pick:
+    - increment `currentPickNumber`
+    - compute the next `draftSlot` with `getPickerForPickNumber`
+    - resolve that slot to its `LeagueMember.userId`
+    - update `currentUserId`
+    - set a new server-owned `turnDeadline`
+12. for the final Pick:
+    - set `status = COMPLETE`
+    - retain `currentPickNumber = totalPicks`
+    - set `currentUserId = null`
+    - set `turnDeadline = null`
+13. commit and return an explicit DTO
+
+The Draft row is the serialization point for turn consumption.
+
+A successful manual pick must atomically:
+- create exactly one Pick
+- consume exactly one current turn
+- advance Draft state exactly once
+
+A rejected pick must leave both Pick and Draft state unchanged.
+
+`totalPicks = teamCount * rosterSize`.
+
+For every successful non-final manual Pick:
+
+`turnDeadline = server time + League.timerSeconds`
+
+Turn progression must use the shared `getPickerForPickNumber`; do not duplicate SNAKE/LINEAR arithmetic in mutation services.
+
+#### Pick submission status conventions
+
+- unauthenticated → `401`
+- malformed/unknown request fields → `400`
+- authenticated non-member / inaccessible League → `404`
+- no Draft for the accessible League → `404`
+- unknown Player → `404`
+- Draft not `ACTIVE` → `409`
+- authenticated member not currently on the clock → `409`
+- Player already drafted in this Draft → `409`
+- success → `201`
+
+Impossible persisted-state failures, such as being unable to resolve the computed next picker, are internal invariant failures rather than normal client conflicts.
+
 ### Draft turn-order conventions
 
 Pure shared function:
@@ -780,6 +918,25 @@ Request:
 - Current DB-backed web test files run serially because they share one physical test database.
 - Do not introduce transaction/dependency-injection machinery solely to manufacture artificial rollback tests.
 
+### Known maintenance issue — Prisma P2002 constraint metadata
+
+Under the current Prisma 7 + `@prisma/adapter-pg` stack, observed P2002 errors do not reliably populate `error.meta.target`.
+
+The adapter currently exposes constraint columns through:
+
+`error.meta.driverAdapterError.cause.constraint.fields`
+
+Milestone 3.2's `submit-pick.ts` handles both the conventional `meta.target` shape and the observed adapter-pg shape for constraint-specific error mapping.
+
+Pre-existing Phase 2 P2002 handlers in:
+- `apps/web/lib/leagues/create-league.ts`
+- `apps/web/lib/leagues/join-league.ts`
+- `apps/web/lib/leagues/reorder-league-members.ts`
+
+still use the older constraint-target parsing assumption and were intentionally not modified during Milestone 3.2.
+
+Fix these in a separate maintenance change rather than silently folding the cleanup into unrelated Phase 3 work.
+
 ## Data model
 
 Prisma schema, roughly:
@@ -789,8 +946,8 @@ Prisma schema, roughly:
 - **LeagueMember** — id, leagueId, userId, draftSlot (int, 1-indexed). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`
 - **Player** — id, sleeperId, fullName, position, nflTeam, searchRank, injuryStatus
 - **PlayerAdp** — id, playerId, format, adp (float, nullable), source. Unique on `(playerId, format)`
-- **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentUserId, turnDeadline (timestamp)
-- **Pick** — id, draftId, pickNumber, userId, playerId, wasAutopick (bool), createdAt
+- **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentUserId, turnDeadline, startedAt, completedAt
+- **Pick** — id, draftId, pickNumber, userId, playerId, wasAutopick, createdAt; unique `(draftId, pickNumber)` and `(draftId, playerId)`
 - **ChatMessage** — id, draftId, userId, body, createdAt
 
 Auth.js persistence is modeled with `Account`, `Session`, and `VerificationToken` alongside the domain models above. Authentication is OAuth-only for now, with no password field on `User`. The app uses `User.name` as the canonical user-facing name field.
@@ -927,14 +1084,16 @@ Goal: implement the server-authoritative draft lifecycle, transactional picks, r
 Milestones:
 
 - **3.1 Draft Start — COMPLETE**
-- **3.2 Transactional Pick Submission — CURRENT**
-- **3.3 Socket.IO Server + Draft Protocol — PLANNED**
+- **3.2 Transactional Pick Submission — COMPLETE**
+- **3.3 Socket.IO Server + Draft Protocol — CURRENT**
 - **3.4 Server-Owned Timers + Autopick — PLANNED**
 - **3.5 Reconnect/Resync — PLANNED**
 
-Later milestones remain provisional and may be combined or split based on implementation complexity. Milestone boundaries should represent meaningful correctness or vertical-capability boundaries rather than arbitrary amounts of code.
+Later milestone boundaries remain provisional and may be combined or split based on actual correctness/dependency boundaries.
 
-Phase 3 exit criterion remains: two browser clients can complete a full draft, including timer expiry and mid-draft reconnect/refresh behavior, with concurrency invariants verified.
+Milestone 3.3 must begin by inspecting the monorepo package boundaries and deciding how the socket server will access authoritative draft mutation behavior. Do not assume `apps/socket-server` should import implementation code directly from `apps/web`.
+
+Phase 3 exit criterion: two browser clients can complete a full draft, including timer expiry and mid-draft reconnect/refresh behavior, with concurrency invariants verified.
 
 **Phase 4 — Client experience.** Live draft board. Available players panel with search and position filter. My-roster view. Pick timer. Chat. Presence indicators. Optimistic pick updates that roll back on `pick:rejected`.
 *Done when: it feels responsive and nothing desyncs or flickers.*
