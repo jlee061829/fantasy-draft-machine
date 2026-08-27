@@ -1,7 +1,7 @@
-import type { DraftStatus } from "@fdm/database";
-import { Prisma, prisma } from "@fdm/database";
+import { Prisma, type DraftStatus } from "../generated/prisma/client.js";
+import { prisma } from "../client.js";
 import { getPickerForPickNumber } from "@fdm/shared";
-import { LeagueNotAccessibleError } from "../leagues/errors";
+import { LeagueNotAccessibleError } from "../leagues/errors.js";
 import {
   DraftNotActiveError,
   DraftNotFoundError,
@@ -9,7 +9,7 @@ import {
   PickAdvanceInvariantError,
   PlayerAlreadyDraftedError,
   PlayerNotFoundError,
-} from "./errors";
+} from "./errors.js";
 
 export interface SubmitPickResult {
   pick: {

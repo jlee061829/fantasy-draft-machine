@@ -68,6 +68,11 @@ export type Draft = Prisma.DraftModel
  */
 export type Pick = Prisma.PickModel
 /**
+ * Model SocketTicket
+ * 
+ */
+export type SocketTicket = Prisma.SocketTicketModel
+/**
  * Model ChatMessage
  * 
  */

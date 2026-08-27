@@ -1,10 +1,11 @@
-import { Prisma, prisma } from "@fdm/database";
 import {
   AlreadyMemberError,
   JoinConflictError,
   LeagueFullError,
   LeagueNotFoundError,
-} from "./errors";
+  Prisma,
+  prisma,
+} from "@fdm/database";
 
 export interface JoinLeagueResult {
   league: {

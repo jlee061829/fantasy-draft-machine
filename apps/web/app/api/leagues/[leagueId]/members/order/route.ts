@@ -1,11 +1,11 @@
 import { auth } from "../../../../../../lib/auth";
-import { DraftAlreadyStartedError } from "../../../../../../lib/drafts/errors";
 import {
+  DraftAlreadyStartedError,
   LeagueNotAccessibleError,
   NotLeagueOwnerError,
   ReorderConflictError,
   ReorderMembershipMismatchError,
-} from "../../../../../../lib/leagues/errors";
+} from "@fdm/database";
 import { reorderLeagueMembersInputSchema } from "../../../../../../lib/leagues/schema";
 import { reorderLeagueMembers } from "../../../../../../lib/leagues/reorder-league-members";
 

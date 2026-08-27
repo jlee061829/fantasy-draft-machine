@@ -9,17 +9,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./test-support": {
+      "types": "./dist/test-support/db.d.ts",
+      "import": "./dist/test-support/db.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "pnpm run build",
-    "test": "vitest run",
+    "test": "env -u DATABASE_URL node --env-file=.env.test node_modules/vitest/vitest.mjs run",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx src/seed/run.ts"
   },
   "dependencies": {
+    "@fdm/shared": "workspace:*",
     "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "7.9.1",
     "pg": "^8.22.0",

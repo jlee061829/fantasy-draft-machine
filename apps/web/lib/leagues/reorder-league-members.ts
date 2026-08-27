@@ -1,8 +1,8 @@
 import { Prisma, prisma } from "@fdm/database";
-import { DraftAlreadyStartedError } from "../drafts/errors";
+import { DraftAlreadyStartedError } from "@fdm/database";
 import { getDraftForLeague } from "../drafts/get-draft-for-league";
 import { authorizeLeagueOwner } from "./authorize-commissioner";
-import { ReorderConflictError, ReorderMembershipMismatchError } from "./errors";
+import { ReorderConflictError, ReorderMembershipMismatchError } from "@fdm/database";
 import type { ReorderLeagueMembersInput } from "./schema";
 
 export interface ReorderLeagueMembersResult {

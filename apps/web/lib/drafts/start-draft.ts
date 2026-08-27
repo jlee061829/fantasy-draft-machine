@@ -2,7 +2,7 @@ import type { DraftStatus } from "@fdm/database";
 import { prisma } from "@fdm/database";
 import { getPickerForPickNumber } from "@fdm/shared";
 import { authorizeLeagueOwner } from "../leagues/authorize-commissioner";
-import { DraftAlreadyExistsError, LeagueNotFullError } from "./errors";
+import { DraftAlreadyExistsError, LeagueNotFullError } from "@fdm/database";
 import { getDraftForLeague } from "./get-draft-for-league";
 
 export interface StartDraftResult {

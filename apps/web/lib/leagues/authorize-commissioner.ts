@@ -1,5 +1,5 @@
 import type { DraftType, Prisma } from "@fdm/database";
-import { LeagueNotAccessibleError, NotLeagueOwnerError } from "./errors";
+import { LeagueNotAccessibleError, NotLeagueOwnerError } from "@fdm/database";
 
 export interface LockedLeague {
   id: string;

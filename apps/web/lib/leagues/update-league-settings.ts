@@ -1,9 +1,9 @@
 import type { DraftType, ScoringFormat } from "@fdm/database";
 import { prisma } from "@fdm/database";
-import { DraftAlreadyStartedError } from "../drafts/errors";
+import { DraftAlreadyStartedError } from "@fdm/database";
 import { getDraftForLeague } from "../drafts/get-draft-for-league";
 import { authorizeLeagueOwner } from "./authorize-commissioner";
-import { TeamCountBelowMembershipError } from "./errors";
+import { TeamCountBelowMembershipError } from "@fdm/database";
 import type { UpdateLeagueSettingsInput } from "./schema";
 
 export interface UpdateLeagueSettingsResult {

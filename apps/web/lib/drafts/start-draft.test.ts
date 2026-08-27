@@ -1,9 +1,13 @@
-import { prisma } from "@fdm/database";
+import {
+  DraftAlreadyExistsError,
+  LeagueNotAccessibleError,
+  LeagueNotFullError,
+  NotLeagueOwnerError,
+  prisma,
+} from "@fdm/database";
+import { cleanupLeagueTestData, createTestUser } from "@fdm/database/test-support";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanupLeagueTestData, createTestUser } from "../../test/db";
 import { createLeague } from "../leagues/create-league";
-import { LeagueNotAccessibleError, NotLeagueOwnerError } from "../leagues/errors";
-import { DraftAlreadyExistsError, LeagueNotFullError } from "./errors";
 import { startDraft } from "./start-draft";
 
 async function createTestLeague(

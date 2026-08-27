@@ -1,6 +1,6 @@
 import { prisma } from "@fdm/database";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanupLeagueTestData, createTestPlayer, createTestUser } from "../../../../../../test/db";
+import { cleanupLeagueTestData, createTestPlayer, createTestUser } from "@fdm/database/test-support";
 import { createLeague } from "../../../../../../lib/leagues/create-league";
 import { startDraft } from "../../../../../../lib/drafts/start-draft";
 import { POST } from "./route";

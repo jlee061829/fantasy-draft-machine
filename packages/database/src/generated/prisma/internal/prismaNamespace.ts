@@ -407,6 +407,7 @@ export const ModelName = {
   PlayerAdp: 'PlayerAdp',
   Draft: 'Draft',
   Pick: 'Pick',
+  SocketTicket: 'SocketTicket',
   ChatMessage: 'ChatMessage'
 } as const
 
@@ -423,7 +424,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "account" | "session" | "verificationToken" | "league" | "leagueMember" | "player" | "playerAdp" | "draft" | "pick" | "chatMessage"
+    modelProps: "user" | "account" | "session" | "verificationToken" | "league" | "leagueMember" | "player" | "playerAdp" | "draft" | "pick" | "socketTicket" | "chatMessage"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1167,6 +1168,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    SocketTicket: {
+      payload: Prisma.$SocketTicketPayload<ExtArgs>
+      fields: Prisma.SocketTicketFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.SocketTicketFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.SocketTicketFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>
+        }
+        findFirst: {
+          args: Prisma.SocketTicketFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.SocketTicketFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>
+        }
+        findMany: {
+          args: Prisma.SocketTicketFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>[]
+        }
+        create: {
+          args: Prisma.SocketTicketCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>
+        }
+        createMany: {
+          args: Prisma.SocketTicketCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.SocketTicketCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>[]
+        }
+        delete: {
+          args: Prisma.SocketTicketDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>
+        }
+        update: {
+          args: Prisma.SocketTicketUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>
+        }
+        deleteMany: {
+          args: Prisma.SocketTicketDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.SocketTicketUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.SocketTicketUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>[]
+        }
+        upsert: {
+          args: Prisma.SocketTicketUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SocketTicketPayload>
+        }
+        aggregate: {
+          args: Prisma.SocketTicketAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateSocketTicket>
+        }
+        groupBy: {
+          args: Prisma.SocketTicketGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SocketTicketGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.SocketTicketCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SocketTicketCountAggregateOutputType> | number
+        }
+      }
+    }
     ChatMessage: {
       payload: Prisma.$ChatMessagePayload<ExtArgs>
       fields: Prisma.ChatMessageFieldRefs
@@ -1406,6 +1481,18 @@ export const PickScalarFieldEnum = {
 } as const
 
 export type PickScalarFieldEnum = (typeof PickScalarFieldEnum)[keyof typeof PickScalarFieldEnum]
+
+
+export const SocketTicketScalarFieldEnum = {
+  id: 'id',
+  token: 'token',
+  userId: 'userId',
+  expiresAt: 'expiresAt',
+  consumedAt: 'consumedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type SocketTicketScalarFieldEnum = (typeof SocketTicketScalarFieldEnum)[keyof typeof SocketTicketScalarFieldEnum]
 
 
 export const ChatMessageScalarFieldEnum = {
@@ -1714,6 +1801,7 @@ export type GlobalOmitConfig = {
   playerAdp?: Prisma.PlayerAdpOmit
   draft?: Prisma.DraftOmit
   pick?: Prisma.PickOmit
+  socketTicket?: Prisma.SocketTicketOmit
   chatMessage?: Prisma.ChatMessageOmit
 }
 

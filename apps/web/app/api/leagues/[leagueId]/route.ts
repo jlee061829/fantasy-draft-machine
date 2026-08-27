@@ -1,10 +1,10 @@
 import { auth } from "../../../../lib/auth";
-import { DraftAlreadyStartedError } from "../../../../lib/drafts/errors";
 import {
+  DraftAlreadyStartedError,
   LeagueNotAccessibleError,
   NotLeagueOwnerError,
   TeamCountBelowMembershipError,
-} from "../../../../lib/leagues/errors";
+} from "@fdm/database";
 import { updateLeagueSettingsInputSchema } from "../../../../lib/leagues/schema";
 import { updateLeagueSettings } from "../../../../lib/leagues/update-league-settings";
 

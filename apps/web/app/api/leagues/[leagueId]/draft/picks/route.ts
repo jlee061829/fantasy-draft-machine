@@ -1,14 +1,14 @@
 import { auth } from "../../../../../../lib/auth";
+import { submitPickInputSchema } from "../../../../../../lib/drafts/schema";
 import {
   DraftNotActiveError,
   DraftNotFoundError,
+  LeagueNotAccessibleError,
   NotOnTheClockError,
   PlayerAlreadyDraftedError,
   PlayerNotFoundError,
-} from "../../../../../../lib/drafts/errors";
-import { submitPickInputSchema } from "../../../../../../lib/drafts/schema";
-import { submitPick } from "../../../../../../lib/drafts/submit-pick";
-import { LeagueNotAccessibleError } from "../../../../../../lib/leagues/errors";
+  submitPick,
+} from "@fdm/database";
 
 export async function POST(
   request: Request,

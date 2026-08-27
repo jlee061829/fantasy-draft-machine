@@ -39,6 +39,7 @@ model User {
   picks             Pick[]
   chatMessages      ChatMessage[]
   currentTurnDrafts Draft[]
+  socketTickets     SocketTicket[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -170,6 +171,22 @@ model Pick {
 
   @@unique([draftId, playerId])
   @@unique([draftId, pickNumber])
+}
+
+// Short-lived, single-use credential minted by an authenticated Next.js
+// route and consumed by the socket server at handshake time to resolve a
+// userId, without ever handing the browser the real Auth.js session token.
+// See packages/database/src/auth/socket-ticket.ts.
+model SocketTicket {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  userId     String
+  expiresAt  DateTime
+  consumedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
 
 model ChatMessage {

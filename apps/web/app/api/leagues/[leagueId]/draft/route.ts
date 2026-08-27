@@ -1,7 +1,11 @@
-import { DraftAlreadyExistsError, LeagueNotFullError } from "../../../../../lib/drafts/errors";
 import { startDraft } from "../../../../../lib/drafts/start-draft";
 import { auth } from "../../../../../lib/auth";
-import { LeagueNotAccessibleError, NotLeagueOwnerError } from "../../../../../lib/leagues/errors";
+import {
+  DraftAlreadyExistsError,
+  LeagueNotAccessibleError,
+  LeagueNotFullError,
+  NotLeagueOwnerError,
+} from "@fdm/database";
 
 export async function POST(request: Request, ctx: RouteContext<"/api/leagues/[leagueId]/draft">) {
   const session = await auth();

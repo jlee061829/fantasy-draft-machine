@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { prisma } from "@fdm/database";
+import { prisma } from "../client.js";
 
 const TEST_DATABASE_NAME = "fantasy_draft_test";
 
@@ -27,7 +27,7 @@ function assertUsingTestDatabase(): void {
       `Refusing to run test database cleanup: DATABASE_URL points at ` +
         `database "${databaseName}", expected "${TEST_DATABASE_NAME}". ` +
         `Ensure tests are run via the "test" script (node --env-file=.env.test ...) ` +
-        `so apps/web/.env.test is loaded before @fdm/database is imported.`,
+        `so .env.test is loaded before @fdm/database is imported.`,
     );
   }
 }

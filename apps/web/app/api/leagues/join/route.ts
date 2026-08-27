@@ -4,7 +4,7 @@ import {
   JoinConflictError,
   LeagueFullError,
   LeagueNotFoundError,
-} from "../../../../lib/leagues/errors";
+} from "@fdm/database";
 import { joinLeague } from "../../../../lib/leagues/join-league";
 import { joinLeagueInputSchema } from "../../../../lib/leagues/schema";
 

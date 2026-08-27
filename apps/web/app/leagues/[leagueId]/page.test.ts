@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanupLeagueTestData, createTestUser } from "../../../test/db";
+import { cleanupLeagueTestData, createTestUser } from "@fdm/database/test-support";
 import { createLeague } from "../../../lib/leagues/create-league";
 import LeagueDetailPage from "./page";
 

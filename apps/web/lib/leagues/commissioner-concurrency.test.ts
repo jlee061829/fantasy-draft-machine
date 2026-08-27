@@ -1,8 +1,12 @@
-import { prisma } from "@fdm/database";
+import {
+  LeagueFullError,
+  ReorderMembershipMismatchError,
+  TeamCountBelowMembershipError,
+  prisma,
+} from "@fdm/database";
+import { cleanupLeagueTestData, createTestUser } from "@fdm/database/test-support";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanupLeagueTestData, createTestUser } from "../../test/db";
 import { createLeague } from "./create-league";
-import { LeagueFullError, ReorderMembershipMismatchError, TeamCountBelowMembershipError } from "./errors";
 import { joinLeague } from "./join-league";
 import { reorderLeagueMembers } from "./reorder-league-members";
 import { updateLeagueSettings } from "./update-league-settings";

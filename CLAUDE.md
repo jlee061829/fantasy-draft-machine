@@ -327,6 +327,40 @@ Last updated: August 2026
   - manual verification confirmed malformed requests return `400`
   - manual verification confirmed rejected requests leave Draft/Pick state unchanged
   - successful multi-user and concurrency paths remain automated real-Postgres verification because the local OAuth setup has only one real account
+- Phase 3 Milestone 3.3a — Shared Draft Service Boundary + Socket Authentication Foundation:
+  - moved shared Prisma-dependent `submitPick` behavior from `apps/web` into `packages/database`
+  - moved shared draft/league service errors into `packages/database`
+  - moved shared real-Postgres test-support helpers into `@fdm/database/test-support`
+  - preserved `submitPick` transaction behavior while changing only its package/import boundary
+  - HTTP pick submission continues to validate transport input inside `apps/web` before calling the shared persistence service
+  - `apps/web/lib/drafts/schema.ts` remains web-owned; transport validation was not moved into the database package
+  - added `getDraftState` and `getDraftStateForLeague` as shared authoritative draft-state queries
+  - draft-state DTOs are explicit transport-independent shapes and do not expose generated Prisma model types
+  - authorized draft-state lookup collapses nonexistent League and authenticated non-member to the same inaccessible/null result
+  - draft-state results include League draft configuration, ordered members, current Draft state, and Picks ordered by `pickNumber` with safe Player display fields
+  - added persisted `SocketTicket` authentication primitive
+  - socket tickets are random UUID tokens with a 15-second lifetime
+  - socket tickets are single-use
+  - ticket consumption is an atomic conditional Postgres update
+  - unknown, expired, and already-consumed tickets all fail identically
+  - added authenticated `POST /api/socket/ticket`
+  - authenticated requests mint a ticket and return `201`
+  - unauthenticated requests return `401` and mint nothing
+  - no Socket.IO behavior was implemented in 3.3a
+  - `apps/socket-server` remained functionally unchanged
+  - no Redis, presence, timer-expiry processing, autopick, cross-process broadcast bridge, or new workspace package was introduced
+- Milestone 3.3a verification:
+  - `apps/web`: 19 test files / 183 tests passing
+  - `packages/database`: 7 test files / 59 tests passing
+  - workspace-wide typecheck passes
+  - workspace-wide build passes
+  - `SocketTicket` migration applied successfully to both `fantasy_draft` and `fantasy_draft_test`
+  - real-Postgres tests verify ticket expiration
+  - real-Postgres tests verify single-use ticket consumption
+  - concurrent consumption of one ticket produces exactly one success
+  - existing transactional pick/concurrency tests remain passing after the service move
+  - manual authenticated `POST /api/socket/ticket` verified `201` with token/expiration
+  - manual unauthenticated `POST /api/socket/ticket` verified `401`
 
 ### Current phase
 
@@ -338,8 +372,9 @@ Completed:
 - Phase 2 — League Management — COMPLETE
 - Phase 3 Milestone 3.1 — Draft Start — COMPLETE
 - Phase 3 Milestone 3.2 — Transactional Pick Submission — COMPLETE
+- Phase 3 Milestone 3.3a — Shared Draft Service Boundary + Socket Authentication Foundation — COMPLETE
 
-Current milestone: **Milestone 3.3 — Socket.IO Server + Draft Protocol**
+Current milestone: **Milestone 3.3b — Socket.IO Draft Protocol + Realtime Integration**
 
 Current Phase 3 capabilities:
 - a completely filled League can be started by its commissioner
@@ -355,22 +390,30 @@ Current Phase 3 capabilities:
 - SNAKE and LINEAR turn progression use the shared `getPickerForPickNumber`
 - successful non-final picks receive a new server-owned turn deadline
 - the final pick atomically transitions the Draft to `COMPLETE`
-- database uniqueness constraints prevent duplicate drafted players and duplicate pick numbers
+- shared Prisma-dependent draft mutation/query services are available from `@fdm/database`
+- an authoritative draft-state query is available for transport adapters
+- authenticated web sessions can mint short-lived, single-use socket authentication tickets
+- socket tickets are persisted and atomically consumed through Postgres
 
-Next objective: design and implement the Socket.IO draft protocol and realtime server while preserving the transactional pick invariants established in Milestone 3.2.
+Next objective: implement the Socket.IO transport in `apps/socket-server`, authenticate connections with the socket-ticket mechanism, authorize draft-room access, provide authoritative draft-state resync, submit picks through the existing shared `submitPick` service, and broadcast accepted authoritative state.
 
 Phase 3 remains in progress.
 
 ### Not yet implemented
 
-- Socket.IO draft protocol and realtime server
-- realtime draft-state broadcast
+- Socket.IO connection/authentication using SocketTicket
+- authorized draft-room join/subscription
+- realtime authoritative draft-state resync
+- Socket.IO pick submission
+- accepted-pick realtime broadcast
+- draft-complete realtime broadcast
 - server-owned timer-expiry processing
 - autopick selection
-- reconnect/resync behavior
-- draft room UI
-- Redis-backed timer coordination / scaling as required by later phase design
-- pause/resume behavior
+- Redis-backed cross-process/multi-instance event publication
+- reconnect/recovery behavior beyond the authoritative resync primitive
+- presence
+- polished draft-room UI
+- pause/resume
 - draft/pick undo
 - roster-position enforcement if later required
 - ML recommendation system
@@ -515,6 +558,21 @@ Phase 3 remains in progress.
 - successful non-final Picks receive a fresh server-owned deadline based on `League.timerSeconds`
 - transactional pick submission currently belongs to `apps/web`; do not import `apps/web` implementation code directly into `apps/socket-server`
 - Milestone 3.3 must explicitly determine the reusable service/package boundary before Socket.IO consumes authoritative draft mutations
+- `packages/shared` remains persistence-independent and must not depend on Prisma
+- shared Prisma-dependent application services may live in `packages/database`
+- `apps/web` and `apps/socket-server` must consume shared persistence services rather than duplicating draft transaction logic
+- `apps/socket-server` must not import implementation code from `apps/web`
+- HTTP transport validation remains owned by `apps/web`
+- Socket.IO transport validation will be owned by the socket transport boundary unless a genuinely transport-independent schema is later justified in `packages/shared`
+- realtime authentication uses short-lived, single-use Postgres-backed `SocketTicket` records
+- socket authentication establishes identity only; League/draft authorization remains a separate server-side check
+- Postgres remains authoritative for draft correctness
+- Socket.IO must not introduce an in-memory correctness boundary for pick submission
+- 3.3 uses full authoritative draft-state synchronization rather than incremental-only client state
+- HTTP-originated picks do not require an immediate Socket.IO broadcast in 3.3
+- cross-process publication is deferred rather than implementing a temporary HTTP broadcast bridge
+- presence is deferred
+- Redis is not required for 3.3
 
 ## Non-negotiable engineering goals
 
@@ -633,6 +691,39 @@ Current script strategy:
 `assertUsingTestDatabase()` remains a mandatory defense-in-depth safety guard and must not be removed or weakened. Destructive test helpers refuse to operate unless the resolved database name is exactly `fantasy_draft_test`.
 
 Test files that share the physical test database remain serialized (`fileParallelism: false`); explicit concurrency tests create concurrency within an individual test.
+
+### Shared service/package boundaries
+
+The current monorepo boundary is:
+
+- `packages/shared`
+  - persistence-independent domain logic
+  - reusable pure functions/types
+  - must not depend on Prisma or `@fdm/database`
+  - currently owns shared draft-order logic such as `getPickerForPickNumber`
+
+- `packages/database`
+  - Prisma client/schema/generated types
+  - shared persistence-dependent services used by multiple application transports
+  - shared persistence/domain errors required by those services
+  - authoritative draft mutation/query services such as `submitPick`, `getDraftState`, and `getDraftStateForLeague`
+  - socket-ticket persistence services
+  - test-only database helpers exposed separately through `@fdm/database/test-support`
+
+- `apps/web`
+  - Next.js HTTP/Auth/UI adapter
+  - owns HTTP request validation
+  - must call shared persistence services rather than duplicating their transaction logic
+
+- `apps/socket-server`
+  - Socket.IO/auth/room transport adapter
+  - may consume `@fdm/database` and `@fdm/shared`
+  - must not import implementation code from `apps/web`
+  - must not duplicate authoritative pick transaction logic
+
+Do not move transport-specific Zod/request validation into `packages/database` merely because the underlying service is shared.
+
+Do not create a new shared service/domain workspace package unless the existing boundary becomes demonstrably insufficient.
 
 ### League join concurrency
 
@@ -883,6 +974,33 @@ Request:
 }
 ```
 
+### Authoritative draft-state query
+
+Shared draft-state reads are owned by `packages/database`.
+
+Public query services:
+
+- `getDraftState(leagueId, requestingUserId)`
+  - membership-checked
+  - returns `null` for nonexistent/inaccessible League
+  - intended for authenticated transport adapters
+
+- `getDraftStateForLeague(leagueId)`
+  - no membership check
+  - server-internal use only
+  - callers are responsible for establishing authorization before using it
+
+The returned `DraftStateResult` is an explicit transport-independent DTO rather than a generated Prisma model.
+
+It contains:
+- League configuration required by draft clients
+- LeagueMembers ordered by `draftSlot`
+- current Draft state, or `null` before draft start
+- Picks ordered by `pickNumber`
+- safe Player display information for persisted Picks
+
+Do not expose raw Prisma rows or Auth.js persistence fields through realtime state payloads.
+
 ### Commissioner mutation status conventions
 
 - unauthenticated → `401`
@@ -918,6 +1036,34 @@ Request:
 - Current DB-backed web test files run serially because they share one physical test database.
 - Do not introduce transaction/dependency-injection machinery solely to manufacture artificial rollback tests.
 
+### Socket authentication conventions
+
+Realtime socket authentication uses short-lived, single-use tickets rather than trusting a client-supplied `userId` or exposing the Auth.js session token to the socket server.
+
+Ticket flow:
+
+1. authenticated browser calls `POST /api/socket/ticket`
+2. Next.js derives `userId` from the existing Auth.js session
+3. server creates a persisted `SocketTicket`
+4. ticket contains a random UUID token and expires 15 seconds after creation
+5. browser supplies that token during the Socket.IO connection handshake
+6. socket server atomically consumes the ticket through `consumeSocketTicket`
+7. successful consumption resolves the authoritative `userId`
+8. expired, unknown, or already-consumed tickets are rejected identically
+
+Socket tickets are:
+- short-lived
+- single-use
+- persisted in Postgres
+- server-minted
+- never a source of authorization beyond establishing authenticated user identity
+
+League/draft authorization must still be checked separately after socket authentication.
+
+The client must never be allowed to claim an arbitrary `userId`.
+
+Expired ticket rows currently have no background cleanup process. Expiration is enforced at consumption time; cleanup may be added later if operationally necessary.
+
 ### Known maintenance issue — Prisma P2002 constraint metadata
 
 Under the current Prisma 7 + `@prisma/adapter-pg` stack, observed P2002 errors do not reliably populate `error.meta.target`.
@@ -949,6 +1095,7 @@ Prisma schema, roughly:
 - **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentUserId, turnDeadline, startedAt, completedAt
 - **Pick** — id, draftId, pickNumber, userId, playerId, wasAutopick, createdAt; unique `(draftId, pickNumber)` and `(draftId, playerId)`
 - **ChatMessage** — id, draftId, userId, body, createdAt
+- **SocketTicket** — id, token (unique), userId, expiresAt, consumedAt, createdAt; belongs to User with `ON DELETE CASCADE`
 
 Auth.js persistence is modeled with `Account`, `Session`, and `VerificationToken` alongside the domain models above. Authentication is OAuth-only for now, with no password field on `User`. The app uses `User.name` as the canonical user-facing name field.
 
@@ -1079,21 +1226,34 @@ Phase 2 is frozen as a completed foundation unless a later phase exposes a concr
 
 **Phase 3 — Realtime Draft Engine — IN PROGRESS**
 
-Goal: implement the server-authoritative draft lifecycle, transactional picks, realtime protocol, timers/autopick, and reconnect correctness.
-
 Milestones:
 
 - **3.1 Draft Start — COMPLETE**
 - **3.2 Transactional Pick Submission — COMPLETE**
-- **3.3 Socket.IO Server + Draft Protocol — CURRENT**
+- **3.3a Shared Draft Service Boundary + Socket Authentication Foundation — COMPLETE**
+- **3.3b Socket.IO Draft Protocol + Realtime Integration — CURRENT**
 - **3.4 Server-Owned Timers + Autopick — PLANNED**
 - **3.5 Reconnect/Resync — PLANNED**
 
-Later milestone boundaries remain provisional and may be combined or split based on actual correctness/dependency boundaries.
+Milestone 3.3b must:
+- consume the shared persistence services established in 3.3a
+- authenticate sockets using single-use SocketTicket records
+- authorize League/draft room access server-side
+- expose an authoritative state/resync primitive
+- submit realtime picks through the existing `submitPick` service
+- broadcast accepted authoritative state to authorized room members
+- preserve Postgres/Draft-row locking as the correctness boundary
+- remain single-instance for realtime delivery unless later scaling work explicitly introduces Redis
 
-Milestone 3.3 must begin by inspecting the monorepo package boundaries and deciding how the socket server will access authoritative draft mutation behavior. Do not assume `apps/socket-server` should import implementation code directly from `apps/web`.
-
-Phase 3 exit criterion: two browser clients can complete a full draft, including timer expiry and mid-draft reconnect/refresh behavior, with concurrency invariants verified.
+Milestone 3.3b must not:
+- duplicate `submitPick`
+- import implementation code from `apps/web`
+- trust client-supplied identity
+- add timer-expiry/autopick behavior
+- add presence
+- add a temporary HTTP cross-process broadcast bridge
+- add Redis prematurely
+- become the polished draft-room frontend
 
 **Phase 4 — Client experience.** Live draft board. Available players panel with search and position filter. My-roster view. Pick timer. Chat. Presence indicators. Optimistic pick updates that roll back on `pick:rejected`.
 *Done when: it feels responsive and nothing desyncs or flickers.*

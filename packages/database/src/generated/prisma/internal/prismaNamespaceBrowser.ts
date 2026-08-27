@@ -61,6 +61,7 @@ export const ModelName = {
   PlayerAdp: 'PlayerAdp',
   Draft: 'Draft',
   Pick: 'Pick',
+  SocketTicket: 'SocketTicket',
   ChatMessage: 'ChatMessage'
 } as const
 
@@ -206,6 +207,18 @@ export const PickScalarFieldEnum = {
 } as const
 
 export type PickScalarFieldEnum = (typeof PickScalarFieldEnum)[keyof typeof PickScalarFieldEnum]
+
+
+export const SocketTicketScalarFieldEnum = {
+  id: 'id',
+  token: 'token',
+  userId: 'userId',
+  expiresAt: 'expiresAt',
+  consumedAt: 'consumedAt',
+  createdAt: 'createdAt'
+} as const
+
+export type SocketTicketScalarFieldEnum = (typeof SocketTicketScalarFieldEnum)[keyof typeof SocketTicketScalarFieldEnum]
 
 
 export const ChatMessageScalarFieldEnum = {
