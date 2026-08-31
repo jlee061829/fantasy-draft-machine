@@ -1,54 +1,30 @@
 import { prisma } from "../client.js";
 import type { Prisma } from "../generated/prisma/client.js";
 
-// Deliberately hand-rolled string-literal unions rather than importing the
-// generated DraftStatus/DraftType/ScoringFormat enum types: this DTO is the
-// wire/resync contract both apps/web and (later) apps/socket-server consume,
-// and it should stay structurally independent of Prisma's generated output
-// even though the values happen to line up today.
-export type DraftStateStatus = "PENDING" | "ACTIVE" | "PAUSED" | "COMPLETE";
-export type DraftStateScoringFormat = "STANDARD" | "PPR" | "HALF_PPR";
-export type DraftStateDraftType = "SNAKE" | "LINEAR";
-
-export interface DraftStateMember {
-  membershipId: string;
-  userId: string;
-  name: string;
-  image: string | null;
-  draftSlot: number;
-}
-
-export interface DraftStatePick {
-  pickNumber: number;
-  userId: string;
-  playerId: string;
-  playerName: string;
-  playerPosition: string;
-  playerNflTeam: string | null;
-  wasAutopick: boolean;
-  createdAt: string;
-}
-
-export interface DraftStateResult {
-  league: {
-    id: string;
-    name: string;
-    rosterSize: number;
-    teamCount: number;
-    scoringFormat: DraftStateScoringFormat;
-    draftType: DraftStateDraftType;
-    timerSeconds: number;
-  };
-  members: DraftStateMember[];
-  draft: {
-    id: string;
-    status: DraftStateStatus;
-    currentPickNumber: number;
-    currentUserId: string | null;
-    turnDeadline: string | null;
-  } | null;
-  picks: DraftStatePick[];
-}
+// The DraftStateResult DTO shape (and its member/pick/status/format/type
+// unions) lives in @fdm/shared, not here: it's the wire/resync contract both
+// apps/web and apps/socket-server consume, and keeping the type definition
+// in the persistence-independent shared package lets the socket transport
+// import it without depending on Prisma or this package. This module keeps
+// every Prisma select/query/mapping concern — the DTO is only ever built
+// here, from the two query functions below. Re-exported so existing
+// importers of these types from "@fdm/database" are unaffected.
+import type {
+  DraftStateResult,
+  DraftStateMember,
+  DraftStatePick,
+  DraftStateStatus,
+  DraftStateScoringFormat,
+  DraftStateDraftType,
+} from "@fdm/shared";
+export type {
+  DraftStateResult,
+  DraftStateMember,
+  DraftStatePick,
+  DraftStateStatus,
+  DraftStateScoringFormat,
+  DraftStateDraftType,
+};
 
 // Single field-selection shared by both query variants below, so the
 // membership-checked (getDraftState) and unchecked (getDraftStateForLeague)

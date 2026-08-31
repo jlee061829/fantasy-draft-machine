@@ -361,6 +361,46 @@ Last updated: August 2026
   - existing transactional pick/concurrency tests remain passing after the service move
   - manual authenticated `POST /api/socket/ticket` verified `201` with token/expiration
   - manual unauthenticated `POST /api/socket/ticket` verified `401`
+- Phase 3 Milestone 3.3b — Socket.IO Draft Protocol + Realtime Integration:
+  - replaced the placeholder `apps/socket-server` HTTP process with a real typed Socket.IO server
+  - added fail-loud socket-server environment validation
+  - added configurable `SOCKET_CORS_ORIGIN`
+  - added client-visible `NEXT_PUBLIC_SOCKET_SERVER_URL` for the browser Socket.IO connection
+  - Socket.IO handshake authentication consumes the short-lived, single-use `SocketTicket` created by the authenticated web endpoint
+  - authenticated socket identity is stored server-side and is never accepted from client event payloads
+  - strict socket payload validation rejects unknown fields, including attempted client-supplied identity
+  - added `draft:join` with server-side League membership authorization
+  - authorized joins place the socket in a `league:${leagueId}` room and return current authoritative draft state
+  - nonexistent/inaccessible Leagues collapse to `LEAGUE_NOT_ACCESSIBLE`
+  - added `draft:pick` using the shared `@fdm/database` `submitPick` service
+  - socket pick handling does not duplicate pick transaction, turn-order, or locking logic
+  - socket pick failures use acknowledgement error codes; no standalone `pick:rejected` event
+  - accepted picks trigger a fresh authoritative state read and one `draft:state` broadcast to the League room
+  - the same `draft:state` event represents normal advancement and draft completion
+  - no separate `draft:complete` event is required because completion is represented in authoritative Draft state
+  - moved persistence-independent `DraftStateResult`, `DraftStateMember`, `DraftStatePick`, and related DTO unions into `packages/shared`
+  - `packages/database` retains all Prisma selects/query/mapping logic and returns the shared DTO types
+  - added a minimal `/leagues/[leagueId]/draft` browser harness for realtime integration/manual verification
+  - reconnects mint a fresh SocketTicket, reconnect, rejoin, and obtain current authoritative state
+  - multiple sockets for the same authenticated user are supported independently
+  - added graceful Socket.IO/Prisma shutdown handling
+  - HTTP-originated picks remain authoritative but do not immediately publish to Socket.IO rooms in 3.3b
+  - no Redis, presence, chat, timer-expiry processing, autopick, HTTP-to-socket broadcast bridge, pause/resume, or undo was introduced
+- Milestone 3.3b verification:
+  - `apps/socket-server`: 4 test files / 23 tests passing
+  - `packages/database`: 7 test files / 59 tests passing
+  - `apps/web`: 20 test files / 187 tests passing
+  - workspace-wide typecheck passes
+  - workspace-wide build passes
+  - real-Postgres socket tests cover ticket authentication and replay/concurrency rejection
+  - socket join tests cover membership authorization, strict payload validation, and multiple sockets for one user
+  - socket pick tests cover accepted/rejected picks and authoritative broadcasts
+  - shared-service-vs-socket race proves exactly one caller can consume a turn
+  - socket-vs-socket race proves exactly one socket can consume a turn
+  - manual browser verification confirmed ticket mint → socket authentication → ticket consumption → room join → authoritative state restoration
+  - manual refresh verification confirmed a fresh SocketTicket is minted and authoritative state is restored
+  - manual two-tab verification confirmed independent simultaneous sockets for the same authenticated user
+  - socket server remained error-free during solo-reachable manual verification
 
 ### Current phase
 
@@ -373,8 +413,9 @@ Completed:
 - Phase 3 Milestone 3.1 — Draft Start — COMPLETE
 - Phase 3 Milestone 3.2 — Transactional Pick Submission — COMPLETE
 - Phase 3 Milestone 3.3a — Shared Draft Service Boundary + Socket Authentication Foundation — COMPLETE
+- Phase 3 Milestone 3.3b — Socket.IO Draft Protocol + Realtime Integration — COMPLETE
 
-Current milestone: **Milestone 3.3b — Socket.IO Draft Protocol + Realtime Integration**
+Current milestone: **Milestone 3.4 — Server-Owned Timers + Autopick**
 
 Current Phase 3 capabilities:
 - a completely filled League can be started by its commissioner
@@ -387,32 +428,35 @@ Current Phase 3 capabilities:
 - pick submission is server-authoritative and transactionally serialized on the Draft row
 - exactly one concurrent submission can consume a turn
 - successful picks atomically persist the Pick and advance Draft state
-- SNAKE and LINEAR turn progression use the shared `getPickerForPickNumber`
-- successful non-final picks receive a new server-owned turn deadline
+- SNAKE and LINEAR turn progression use shared draft-order logic
 - the final pick atomically transitions the Draft to `COMPLETE`
-- shared Prisma-dependent draft mutation/query services are available from `@fdm/database`
-- an authoritative draft-state query is available for transport adapters
-- authenticated web sessions can mint short-lived, single-use socket authentication tickets
-- socket tickets are persisted and atomically consumed through Postgres
+- shared Prisma-dependent draft services live in `@fdm/database`
+- authoritative draft-state DTO types live in persistence-independent `@fdm/shared`
+- authenticated web sessions can mint short-lived, single-use SocketTickets
+- the standalone Socket.IO server authenticates connections by atomically consuming SocketTickets
+- socket identity is derived exclusively from the consumed ticket
+- authenticated LeagueMembers can join league-scoped realtime rooms
+- room joins return authoritative Postgres-backed draft state
+- realtime picks use the same shared transactional `submitPick` service as HTTP picks
+- accepted socket picks broadcast a full authoritative `draft:state` snapshot
+- rejected socket picks return acknowledgement error codes and do not broadcast successful state
+- multiple sockets/tabs for the same authenticated user are supported
+- reconnecting clients mint a fresh SocketTicket, reconnect, rejoin, and resync authoritative state
 
-Next objective: implement the Socket.IO transport in `apps/socket-server`, authenticate connections with the socket-ticket mechanism, authorize draft-room access, provide authoritative draft-state resync, submit picks through the existing shared `submitPick` service, and broadcast accepted authoritative state.
+Next objective: implement server-owned turn expiration and autopick while preserving Postgres as the authoritative correctness boundary and ensuring timer/manual-pick races cannot consume the same turn twice.
 
 Phase 3 remains in progress.
 
 ### Not yet implemented
 
-- Socket.IO connection/authentication using SocketTicket
-- authorized draft-room join/subscription
-- realtime authoritative draft-state resync
-- Socket.IO pick submission
-- accepted-pick realtime broadcast
-- draft-complete realtime broadcast
-- server-owned timer-expiry processing
+- server-owned turn-expiration processing
 - autopick selection
-- Redis-backed cross-process/multi-instance event publication
-- reconnect/recovery behavior beyond the authoritative resync primitive
+- timer/manual-pick race handling
+- Redis-backed cross-process/multi-instance realtime publication
+- immediate Socket.IO publication of successful HTTP-originated mutations
+- event replay or more sophisticated reconnect recovery
 - presence
-- polished draft-room UI
+- polished draft-board UI
 - pause/resume
 - draft/pick undo
 - roster-position enforcement if later required
@@ -573,6 +617,21 @@ Phase 3 remains in progress.
 - cross-process publication is deferred rather than implementing a temporary HTTP broadcast bridge
 - presence is deferred
 - Redis is not required for 3.3
+- persistence-independent draft-state DTO types belong in `packages/shared`; Prisma query/mapping logic remains in `packages/database`
+- Socket.IO authentication uses the Postgres-backed SocketTicket mechanism
+- socket identity must come exclusively from consumed SocketTicket state, never client event payloads
+- Socket.IO payload schemas are strict and reject unknown fields
+- realtime League rooms use `league:${leagueId}`
+- socket request/domain failures use acknowledgement error codes
+- there is no standalone `pick:rejected` event
+- successful socket picks broadcast one full authoritative `draft:state`
+- draft completion is represented through `draft:state`, not a separate `draft:complete` event
+- multiple simultaneous sockets for one authenticated user are valid
+- reconnects mint a fresh SocketTicket and resync through `draft:join`
+- Socket.IO is a delivery layer; Postgres remains the draft correctness boundary
+- HTTP-originated mutations are not bridged into Socket.IO in 3.3
+- do not add a temporary HTTP-to-socket broadcast bridge
+- Redis remains deferred until cross-process/multi-instance realtime publication is actually required
 
 ## Non-negotiable engineering goals
 
@@ -878,6 +937,106 @@ For every successful non-final manual Pick:
 `turnDeadline = server time + League.timerSeconds`
 
 Turn progression must use the shared `getPickerForPickNumber`; do not duplicate SNAKE/LINEAR arithmetic in mutation services.
+
+### Authoritative draft-state query and DTO ownership
+
+Persistence-independent draft-state DTO types are owned by `packages/shared`.
+
+These include:
+- `DraftStateResult`
+- `DraftStateMember`
+- `DraftStatePick`
+- related plain string-literal status/configuration types
+
+`packages/shared` remains Prisma-free.
+
+The actual database queries, Prisma selects, authorization checks, and mapping logic remain owned by `packages/database`.
+
+Public query services:
+
+- `getDraftState(leagueId, requestingUserId)`
+  - membership-checked
+  - returns `null` for nonexistent/inaccessible League
+  - intended for authenticated transport adapters
+
+- `getDraftStateForLeague(leagueId)`
+  - no membership check
+  - server-internal use only
+  - callers must establish authorization before using it
+
+Both return the shared persistence-independent `DraftStateResult` shape.
+
+Do not duplicate the draft-state DTO separately across web, database, and socket packages.
+
+Do not expose raw Prisma rows or Auth.js persistence fields through HTTP or realtime state payloads.
+
+### Socket.IO draft protocol conventions
+
+Socket authentication:
+- browser first obtains a SocketTicket from authenticated `POST /api/socket/ticket`
+- ticket is supplied through Socket.IO handshake auth
+- socket server atomically consumes the ticket
+- successful consumption establishes `socket.data.userId`
+- client event payloads never supply authoritative identity
+- invalid/expired/consumed tickets are rejected generically
+
+Current client-to-server events:
+- `draft:join`
+- `draft:pick`
+
+Current server-to-client events:
+- `draft:state`
+
+Socket request failures are returned through acknowledgement callbacks with stable error codes.
+
+There is no standalone `pick:rejected` event.
+
+League rooms are keyed as:
+
+`league:${leagueId}`
+
+`draft:join`:
+- strictly validates payload
+- checks League membership through authoritative database state lookup
+- joins the League room only after authorization succeeds
+- returns authoritative state through its acknowledgement
+
+`draft:pick`:
+- strictly validates payload
+- requires the socket to have joined the League room
+- derives user identity exclusively from authenticated socket data
+- calls shared `submitPick`
+- does not duplicate transaction or turn-validation logic
+- rejected picks do not broadcast state
+- accepted picks re-read authoritative state and broadcast one full `draft:state` snapshot to the room
+
+Draft completion is represented by the normal authoritative `draft:state` payload:
+- `status === "COMPLETE"`
+- `currentUserId === null`
+- `turnDeadline === null`
+
+Do not add a redundant `draft:complete` event unless a future requirement demonstrates a concrete need.
+
+Socket.IO room membership and broadcasts are realtime delivery mechanisms only. They are not correctness boundaries. Postgres transactions remain authoritative.
+
+### Realtime reconnect behavior
+
+SocketTickets are single-use, so reconnecting clients must mint a fresh ticket.
+
+Current reconnect/resync flow:
+
+1. mint a fresh SocketTicket
+2. reconnect to Socket.IO
+3. authenticate by consuming the fresh ticket
+4. emit `draft:join`
+5. receive current authoritative state
+6. replace local draft state with that snapshot
+
+No event replay or missed-event log exists yet.
+
+Authoritative state resync, rather than replaying every missed realtime event, is the current recovery primitive.
+
+More sophisticated reconnect/recovery behavior may be added later only if required.
 
 #### Pick submission status conventions
 
@@ -1193,7 +1352,6 @@ Do not move to the next phase until the current one's exit criterion is met.
 *Done when: you can sign up, log in, and query seeded players with ADP attached.*
 
 **Phase 2 — League Management — COMPLETE**
-
 Goal: authenticated league creation and joining, member visibility with deterministic draft slots, commissioner-only settings and slot management, with server-side authorization and concurrency-safe persistence.
 
 Milestones:
@@ -1231,8 +1389,8 @@ Milestones:
 - **3.1 Draft Start — COMPLETE**
 - **3.2 Transactional Pick Submission — COMPLETE**
 - **3.3a Shared Draft Service Boundary + Socket Authentication Foundation — COMPLETE**
-- **3.3b Socket.IO Draft Protocol + Realtime Integration — CURRENT**
-- **3.4 Server-Owned Timers + Autopick — PLANNED**
+- **3.3b Socket.IO Draft Protocol + Realtime Integration — COMPLETE**
+- **3.4 Server-Owned Timers + Autopick — CURRENT**
 - **3.5 Reconnect/Resync — PLANNED**
 
 Milestone 3.3b must:

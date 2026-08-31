@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth, signIn } from "../../../lib/auth";
 import { getLeagueDetail } from "../../../lib/leagues/get-league-detail";
@@ -70,6 +71,10 @@ export default async function LeagueDetailPage({
           </li>
         ))}
       </ol>
+
+      <p>
+        <Link href={`/leagues/${league.id}/draft`}>Draft room</Link>
+      </p>
 
       {session.user.id === league.ownerId && (
         <>

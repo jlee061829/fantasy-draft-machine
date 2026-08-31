@@ -1,16 +1,23 @@
-import { createServer } from "node:http";
-import { SHARED_PACKAGE_NAME } from "@fdm/shared";
-import { DATABASE_PACKAGE_NAME } from "@fdm/database";
+// Must be the first import: validates process.env and fails loudly on boot
+// if it's misconfigured, before @fdm/database's Prisma client singleton
+// (imported transitively below) reads process.env.DATABASE_URL at
+// module-eval time.
+import { env } from "./env.js";
+import { prisma } from "@fdm/database";
+import { createSocketServer } from "./server.js";
 
-const port = process.env.PORT ?? 4000;
+const { httpServer, io } = createSocketServer();
 
-const server = createServer((_req, res) => {
-  res.writeHead(200, { "content-type": "text/plain" });
-  res.end("fantasy-draft-machine socket server placeholder\n");
+httpServer.listen(env.PORT, () => {
+  console.log(`socket-server listening on port ${env.PORT}`);
 });
 
-server.listen(port, () => {
-  console.log(
-    `socket-server placeholder listening on port ${port} (linked: ${SHARED_PACKAGE_NAME}, ${DATABASE_PACKAGE_NAME})`,
-  );
-});
+async function shutdown(signal: string) {
+  console.log(`${signal} received, shutting down socket-server`);
+  io.close();
+  await prisma.$disconnect();
+  process.exit(0);
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
