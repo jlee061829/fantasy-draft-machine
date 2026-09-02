@@ -1,6 +1,7 @@
 import { getDraftState } from "@fdm/database";
 import { notFound } from "next/navigation";
 import { auth, signIn } from "../../../../lib/auth";
+import { getAvailablePlayers } from "../../../../lib/players/get-available-players";
 import { DraftRoomClient } from "./DraftRoomClient";
 
 // Auth-gate and notFound() collapse mirror the league detail page
@@ -40,11 +41,18 @@ export default async function DraftRoomPage({
     notFound();
   }
 
+  // Player-pool fetch only runs once membership is already established by
+  // getDraftState above — getAvailablePlayers has no auth/membership check
+  // of its own (see its own doc comment) because it needs none: it takes no
+  // leagueId/userId, only the league's own scoringFormat.
+  const players = await getAvailablePlayers(initialState.league.scoringFormat);
+
   return (
     <DraftRoomClient
       leagueId={leagueId}
       currentUserId={session.user.id}
       initialState={initialState}
+      players={players}
     />
   );
 }

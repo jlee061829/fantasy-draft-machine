@@ -1,4 +1,5 @@
-import { cleanupLeagueTestData, createTestUser } from "@fdm/database/test-support";
+import { prisma } from "@fdm/database";
+import { cleanupLeagueTestData, createTestPlayer, createTestUser } from "@fdm/database/test-support";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLeague } from "../../../../lib/leagues/create-league";
 import DraftRoomPage from "./page";
@@ -101,5 +102,31 @@ describe("DraftRoomPage", () => {
     expect((element as unknown as { props: { currentUserId: string } }).props.currentUserId).toBe(
       owner.id,
     );
+  });
+
+  it("threads a rostered player pool matching the league's scoring format into DraftRoomClient", async () => {
+    const owner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+    const { league } = await testLeague(owner.id); // PPR, per testLeague()
+
+    const rostered = await createTestPlayer({ fullName: "Rostered", nflTeam: "CIN" });
+    await prisma.playerAdp.create({
+      data: { playerId: rostered.id, format: "PPR", adp: 3.2, source: "test" },
+    });
+    const freeAgent = await createTestPlayer({ fullName: "Free Agent", nflTeam: null });
+    await prisma.playerAdp.create({
+      data: { playerId: freeAgent.id, format: "PPR", adp: 1, source: "test" },
+    });
+
+    const element = await DraftRoomPage({ params: paramsFor(league.id) });
+
+    const players = (
+      element as unknown as {
+        props: { players: Array<{ id: string; adp: number | null }> };
+      }
+    ).props.players;
+
+    expect(players.find((p) => p.id === rostered.id)?.adp).toBe(3.2);
+    expect(players.find((p) => p.id === freeAgent.id)).toBeUndefined();
   });
 });

@@ -59,3 +59,12 @@ export function formatCountdown(msRemaining: number): string {
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
+
+// The single source of drafted-player identity for Milestone 4.3's
+// available-players panel — derived fresh from authoritative state.picks on
+// every render rather than tracked as a second mutable "draftedPlayers"
+// collection. A new draft:state/draft:join snapshot (manual pick, autopick,
+// or resync) is reflected automatically the next time this is called.
+export function getDraftedPlayerIds(state: DraftStateResult): Set<string> {
+  return new Set(state.picks.map((pick) => pick.playerId));
+}

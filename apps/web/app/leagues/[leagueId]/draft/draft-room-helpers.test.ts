@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatCountdown,
   getCurrentPickerName,
+  getDraftedPlayerIds,
   getDraftPhase,
   getMsRemaining,
   isYourTurn,
@@ -168,5 +169,43 @@ describe("formatCountdown", () => {
 
   it("clamps negative input defensively", () => {
     expect(formatCountdown(-500)).toBe("0:00");
+  });
+});
+
+function pick(pickNumber: number, playerId: string): DraftStateResult["picks"][number] {
+  return {
+    pickNumber,
+    userId: "user-1",
+    playerId,
+    playerName: "Test Player",
+    playerPosition: "RB",
+    playerNflTeam: "CIN",
+    wasAutopick: false,
+    createdAt: new Date(0).toISOString(),
+  };
+}
+
+describe("getDraftedPlayerIds", () => {
+  it("returns an empty set when there are no picks", () => {
+    const state = stateWithDraft(null);
+    expect(getDraftedPlayerIds(state)).toEqual(new Set());
+  });
+
+  it("returns the set of every drafted playerId", () => {
+    const state: DraftStateResult = {
+      ...stateWithDraft(null),
+      picks: [pick(1, "player-a"), pick(2, "player-b")],
+    };
+    expect(getDraftedPlayerIds(state)).toEqual(new Set(["player-a", "player-b"]));
+  });
+
+  it("does not duplicate a repeated playerId", () => {
+    const state: DraftStateResult = {
+      ...stateWithDraft(null),
+      picks: [pick(1, "player-a"), pick(2, "player-a")],
+    };
+    const ids = getDraftedPlayerIds(state);
+    expect(ids.size).toBe(1);
+    expect(ids.has("player-a")).toBe(true);
   });
 });

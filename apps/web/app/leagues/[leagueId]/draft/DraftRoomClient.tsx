@@ -5,11 +5,14 @@ import type {
   DraftStateResult,
   ServerToClientEvents,
 } from "@fdm/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
+import type { AvailablePlayer } from "../../../../lib/players/get-available-players";
+import { AvailablePlayersPanel } from "./AvailablePlayersPanel";
 import { ConnectionStatusBadge, type ConnectionStatus } from "./ConnectionStatusBadge";
 import {
   getCurrentPickerName,
+  getDraftedPlayerIds,
   getDraftPhase,
   getMsRemaining,
   isYourTurn,
@@ -24,6 +27,7 @@ interface DraftRoomClientProps {
   leagueId: string;
   currentUserId: string;
   initialState: DraftStateResult;
+  players: AvailablePlayer[];
 }
 
 async function mintTicket(): Promise<string> {
@@ -42,7 +46,12 @@ async function mintTicket(): Promise<string> {
 // that into readable presentation — who's on the clock, is it your turn,
 // how much time appears to remain, and whether the realtime connection is
 // currently healthy.
-export function DraftRoomClient({ leagueId, currentUserId, initialState }: DraftRoomClientProps) {
+export function DraftRoomClient({
+  leagueId,
+  currentUserId,
+  initialState,
+  players,
+}: DraftRoomClientProps) {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [state, setState] = useState<DraftStateResult>(initialState);
   const [joinError, setJoinError] = useState<string | null>(null);
@@ -181,6 +190,7 @@ export function DraftRoomClient({ leagueId, currentUserId, initialState }: Draft
   const pickerName = getCurrentPickerName(state);
   const yourTurn = isYourTurn(state, currentUserId);
   const msRemaining = getMsRemaining(turnDeadline, now);
+  const draftedPlayerIds = useMemo(() => getDraftedPlayerIds(state), [state]);
 
   function handleSubmitPick(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -264,6 +274,8 @@ export function DraftRoomClient({ leagueId, currentUserId, initialState }: Draft
           )}
         </section>
       </div>
+
+      <AvailablePlayersPanel players={players} draftedPlayerIds={draftedPlayerIds} />
 
       <section
         style={{

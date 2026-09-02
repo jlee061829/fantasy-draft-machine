@@ -510,6 +510,41 @@ Last updated: September 2026
   - manual verification confirmed, on the one real account's own league with no Draft: direct navigation to `/leagues/[leagueId]/draft` renders the shell correctly, "Draft has not started yet" renders, the authenticated member is marked `(you)`, raw current-user-ID presentation is gone, and the temporary pick form is clearly labeled as a debug control
   - manual verification confirmed the connection lifecycle: initial "Connecting…" to "Live"; stopping the socket server transitions to "Reconnecting…" while preserving the last authoritative snapshot; restarting the socket server returns to "Live" and resyncs authoritative state without a browser refresh; a page refresh reconnects normally; no unexpected console errors or unhandled Promise rejections were observed across connect/disconnect/reconnect/refresh
   - ACTIVE-draft countdown, current-picker/"your turn" rendering for someone else's turn, COMPLETE-draft rendering, and autopick-driven UI updates could not be legitimately reproduced manually because the development `Draft` table currently contains no Drafts and only one real OAuth identity exists locally; these remain verified through the deterministic unit tests above plus the existing Phase 3 `packages/database`/`apps/socket-server` real-Postgres/real-socket suites rather than through fabricated identities or dev-database seeding
+- Phase 4 Milestone 4.3 — Available Players + Search/Filtering:
+  - the production draft-room discovery surface currently includes rostered NFL players (`Player.nflTeam IS NOT NULL`); expanding discovery to free agents or other provider records would be a future explicit product/data decision
+  - current dev data: 4,262 total `Player` rows; 1,068 rostered rows (`nflTeam IS NOT NULL`) surface in the draft-room pool
+  - added `getAvailablePlayers(scoringFormat)` in `apps/web/lib/players/get-available-players.ts` — one server-side fetch per page load, called from `/leagues/[leagueId]/draft`'s Server Component alongside the existing `getDraftState` call
+  - no new player-search API route, pagination, virtualization, debounce, or per-keystroke network requests were introduced
+  - the fetched player pool is passed into `DraftRoomClient` as a prop and filtered entirely client-side
+  - `DraftRoomClient` remains the sole authoritative draft/socket-state owner; the player pool is a separate, independent prop, not folded into `DraftStateResult`
+  - drafted player IDs are derived from authoritative `state.picks` via a new pure `getDraftedPlayerIds(state)` helper added to `draft-room-helpers.ts`; no second mutable drafted-player collection was introduced
+  - search/position-filter state lives locally inside the new `AvailablePlayersPanel` client component, not in `DraftRoomClient`
+  - search is trimmed, case-insensitive, partial `fullName` matching only; team-abbreviation search was intentionally not added
+  - position filters are `All | QB | RB | WR | TE | K | DEF`, matching the actual position values present in the data; position filtering remains presentation-only
+  - search and position filter combine with AND
+  - drafted players are excluded from the available-player list; a new authoritative `draft:state` snapshot naturally updates availability, with no optimistic removal and no new client-side correctness boundary
+  - the player table displays Player / Pos / Team / ADP; there is deliberately no Rank column, since a rank derived from the currently filtered result set would misleadingly resemble an overall fantasy ranking
+  - missing ADP displays as `—`
+  - ADP is selected using the league's own `scoringFormat`, not hardcoded to PPR
+  - ordering is ADP ascending (nulls last), then `searchRank` ascending (nulls last), then deterministic `id` ascending — `searchRank` is an ordering input only and is never rendered
+  - the query is rooted on `PlayerAdp` (one row per Player per format is a standing seed invariant), filtered to `player.nflTeam IS NOT NULL`, using Prisma 7.9.1's native `{ sort, nulls }` ordering on both a direct field (`adp`) and a nested to-one relation field (`player.searchRank`); this was verified against the installed generated types before implementation, so no fallback ordering implementation was required
+  - the `AvailablePlayer` DTO is a narrow web-only DTO in `apps/web/lib/players`, following the same convention as `LeagueDetailResult`/`MyLeagueSummary` — not a raw Prisma model, and not moved into `@fdm/shared` since it never crosses the socket-server transport boundary
+  - the old `/players` verification route was left untouched/superseded, not removed
+  - the temporary manual `playerId` debug form remains, unchanged, until Milestone 4.4
+  - Phase 3 `submitPick` correctness was not modified; Postgres/`submitPick` remains the sole authority on pick validity regardless of what the discovery panel shows
+  - no roster-position enforcement or roster-aware filtering was added
+- Milestone 4.3 verification:
+  - `packages/database` build passed
+  - workspace-wide typecheck passed
+  - `packages/database`: 75/75 tests passing
+  - `apps/web`: 238/238 tests passing (219 prior + 19 new)
+  - `apps/socket-server`: 30/30 tests passing (unaffected)
+  - workspace-wide build passed with the required development environment variables loaded
+  - new test coverage: scoring-format-specific ADP selection, rostered inclusion / `nflTeam: null` exclusion, missing-ADP behavior, deterministic ordering (ADP → searchRank → id), case-insensitive partial search, whitespace/empty search, no-results behavior, position filtering, search+position AND behavior, drafted-player exclusion, drafted-ID derivation from `state.picks`, and server-to-client player-prop threading
+  - manual verification was performed using the existing legitimate development OAuth/Auth.js session state; no user or session was fabricated
+  - manual verification confirmed the Available Players panel renders before a Draft exists, real rostered players appear with correct Player/Pos/Team/ADP data, search and clearing search work, the DEF filter returns exactly 32 rows matching the dev database, K and DEF are supported position filters, search+position combine correctly, the no-results state renders, clearing all filters restores all 1,068 rostered players, missing ADP renders as `—`, and displayed ADP matched the league's own PPR scoring format
+  - the socket server was intentionally not running during this player-discovery verification; the resulting connection-refused console noise was expected and unrelated to 4.3
+  - drafted-player disappearance and other ACTIVE-draft live-update behavior remain automated-only, since the development database still has no legitimate ACTIVE Draft; Milestone 4.4 is where the current player rows become the production pick-submission UX, with Draft actions replacing the temporary raw player-ID workflow
 
 ### Current phase
 
@@ -522,6 +557,7 @@ Completed:
 - Phase 3 — Realtime Draft Engine — COMPLETE (Milestones 3.1, 3.2, 3.3a, 3.3b, 3.4; see "Milestone 3.5 status" below for why there is no separate 3.5)
 - Phase 4 Milestone 4.1 — Commissioner Draft Start UI — COMPLETE
 - Phase 4 Milestone 4.2 — Draft Room Shell + Live Turn State — COMPLETE
+- Phase 4 Milestone 4.3 — Available Players + Search/Filtering — COMPLETE
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -560,8 +596,9 @@ Current Phase 4 capabilities:
 - `/leagues/[leagueId]` reflects Draft existence: no Draft yet routes into a role-appropriate start/status view (disabled progress state or enabled action for the commissioner, status text for everyone else); an existing Draft routes into the draft-room link instead
 - the draft room at `/leagues/[leagueId]/draft` presents human-readable no-Draft / ACTIVE / COMPLETE state, current-picker identity, "your turn" emphasis, and a cosmetic countdown derived from authoritative `turnDeadline`, instead of raw debug fields
 - the draft room's realtime connection state (connecting/live/reconnecting/error) is presented accurately, distinguishing Socket.IO failures that will retry automatically from ones that will not (via `socket.active`), while always preserving the last authoritative snapshot through a temporary disconnect
+- the draft room at `/leagues/[leagueId]/draft` includes an Available Players panel: a server-fetched, rostered-only (`nflTeam IS NOT NULL`) player pool filtered client-side by case-insensitive partial name search and an `All | QB | RB | WR | TE | K | DEF` position filter, with drafted players excluded via IDs derived from authoritative `state.picks`
 
-Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestones 4.1 — Commissioner Draft Start UI and 4.2 — Draft Room Shell + Live Turn State are complete. Milestone 4.3 — Available Players + Search/Filtering is the next objective.
+Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestones 4.1 — Commissioner Draft Start UI, 4.2 — Draft Room Shell + Live Turn State, and 4.3 — Available Players + Search/Filtering are complete. Milestone 4.4 — Production Pick Submission UX is the next objective: it turns the current player rows into production pick-submission UX, with Draft actions replacing the temporary raw player-ID debug workflow.
 
 ### Not yet implemented
 
@@ -778,6 +815,20 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - the temporary manual player-ID pick form remains a labeled debug/development control through Milestone 4.3; Milestone 4.4 owns replacing it with production pick UX
 - no new frontend state-management library (Redux/Zustand/Context/reducer) will be introduced for draft-room state unless a later milestone demonstrates a concrete need beyond derived-from-authoritative-state logic
 - Tailwind CSS is named in this document's Stack table but is not currently installed anywhere in the repository; no styling framework was added in Milestone 4.2, and this mismatch is a documentation/styling-system decision to revisit later rather than a statement that Tailwind exists today
+- the production draft-room player-discovery pool is defined as `Player.nflTeam IS NOT NULL`; expanding discovery to free agents or other provider records would be a future explicit product/data decision, not something the temporary debug pick form is meant to compensate for
+- player discovery uses one server-side `getAvailablePlayers(scoringFormat)` fetch per page load; no player-search API route, pagination, virtualization, debounce, or per-keystroke network request was introduced
+- the fetched player pool is passed into `DraftRoomClient` and filtered client-side; `DraftRoomClient` remains the sole authoritative draft/socket-state owner
+- drafted player IDs are derived from authoritative `state.picks`; no second mutable drafted-player collection exists
+- search/position-filter state lives locally in `AvailablePlayersPanel`, not in `DraftRoomClient`
+- available-player search is trimmed, case-insensitive, partial `fullName` matching only; position filters are `All | QB | RB | WR | TE | K | DEF`; search and position filter combine with AND
+- the available-player table displays Player / Pos / Team / ADP with no Rank column — a rank derived from the currently filtered result set would misleadingly resemble an overall fantasy ranking; missing ADP displays as `—`
+- available-player ADP is selected using the league's own `scoringFormat`; ordering is ADP ascending (nulls last), then `searchRank` ascending (nulls last), then deterministic `id` ascending; `searchRank` is an ordering input only and is never rendered
+- Prisma 7.9.1 supports `{ sort, nulls }` ordering on a nested to-one relation field natively, so the available-players query needed no fallback ordering implementation
+- the `AvailablePlayer` DTO is a narrow web-only DTO in `apps/web/lib/players`, following the same convention as `LeagueDetailResult`/`MyLeagueSummary` — not a raw Prisma model, and not moved into `@fdm/shared`
+- the old `/players` verification route remains untouched/superseded, not removed
+- the temporary manual `playerId` debug form remains until Milestone 4.4, which is where the current player rows become the production pick-submission UX, with Draft actions replacing the temporary raw player-ID workflow
+- Phase 3 `submitPick` correctness was not modified for Milestone 4.3; Postgres/`submitPick` remains the sole authority on pick validity regardless of what the discovery panel shows
+- no roster-position enforcement or roster-aware filtering was added in Milestone 4.3
 
 ## Non-negotiable engineering goals
 
@@ -1596,8 +1647,8 @@ Turns the existing, functionally-complete Phase 3 draft transport into a usable 
 Milestones:
 - **4.1 Commissioner Draft Start UI — COMPLETE**
 - **4.2 Draft Room Shell + Live Turn State — COMPLETE**
-- **4.3 Available Players + Search/Filtering**
-- **4.4 Production Pick Submission UX**
+- **4.3 Available Players + Search/Filtering — COMPLETE**
+- **4.4 Production Pick Submission UX — NEXT**
 - **4.5 Draft Board + Team Rosters**
 - **4.6 Draft Room UX Hardening + Phase 4 Closeout**
 
