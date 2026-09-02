@@ -4,6 +4,7 @@ import { auth, signIn } from "../../../lib/auth";
 import { getLeagueDetail } from "../../../lib/leagues/get-league-detail";
 import { LeagueSettingsForm } from "./league-settings-form";
 import { MemberOrderForm } from "./member-order-form";
+import { StartDraftForm } from "./start-draft-form";
 
 // Milestone 2.3 manual-verification page: minimal, unstyled, just enough to
 // exercise getLeagueDetail as an authenticated league member. Nonexistent
@@ -72,9 +73,24 @@ export default async function LeagueDetailPage({
         ))}
       </ol>
 
-      <p>
-        <Link href={`/leagues/${league.id}/draft`}>Draft room</Link>
-      </p>
+      <h2>Draft</h2>
+      {detail.draft ? (
+        <p>
+          <Link href={`/leagues/${league.id}/draft`}>Enter draft room</Link>
+        </p>
+      ) : session.user.id === league.ownerId ? (
+        <StartDraftForm
+          leagueId={league.id}
+          isFull={members.length === league.teamCount}
+          membersCount={members.length}
+          teamCount={league.teamCount}
+        />
+      ) : (
+        <p>
+          The commissioner hasn't started the draft yet — {members.length}/{league.teamCount}{" "}
+          joined.
+        </p>
+      )}
 
       {session.user.id === league.ownerId && (
         <>

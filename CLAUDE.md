@@ -451,20 +451,45 @@ Last updated: September 2026
   - workspace-wide typecheck passes
   - workspace-wide build passes with `/leagues` registered
   - manual verification confirmed an existing created League appears with correct commissioner indication and metadata, its detail link works, Create/Join navigation works, and signed-out access shows the normal sign-in fallback
+- Phase 4 Milestone 4.1 — Commissioner Draft Start UI:
+  - `/leagues/[leagueId]` no longer exposes an unconditional Draft Room link
+  - `getLeagueDetail` now exposes minimal draft existence as `draft: { id: string } | null`
+  - draft `status` was deliberately not added to this DTO — 4.1 only needs existence; a later milestone can extend the shape if it actually needs more
+  - commissioner + no Draft + underfilled league renders a disabled Start Draft control with `X/Y joined` membership progress
+  - commissioner + no Draft + full league renders an enabled Start Draft action
+  - non-commissioner + no Draft renders status messaging only; no start control is rendered for any non-owner
+  - an existing Draft renders an "Enter draft room" link instead of any start action, for any role
+  - added `apps/web/app/leagues/[leagueId]/start-draft-form.tsx`, a small client component and the only new UI surface this milestone introduces
+  - `StartDraftForm` calls the existing `POST /api/leagues/[leagueId]/draft` endpoint unchanged; no second draft-start path was introduced
+  - a pending state disables the control and prevents double submission while the request is in flight
+  - successful start navigates via `router.push` into `/leagues/[leagueId]/draft`
+  - errors are presented as short user-facing copy mapped from HTTP status, not as a raw JSON/error-body dump
+  - the endpoint's ambiguous `409` (shared by `DraftAlreadyExistsError` and `LeagueNotFullError`, with no structured code to tell them apart) is not parsed from the error string; the UI reports that draft state changed and calls `router.refresh()` so the server component re-fetches authoritative league state
+  - server-side `startDraft` authorization, transaction, and correctness behavior is unchanged and remains authoritative; this milestone is UI-only
+  - no Socket.IO, Phase 3 draft-engine, schema, `packages/shared`, or `packages/database` changes were required
+  - no new frontend global state-management infrastructure was introduced
+- Milestone 4.1 verification:
+  - `apps/web`: 22 test files / 200 tests passing
+  - `packages/database`: 8 test files / 75 tests passing
+  - `apps/socket-server`: 5 test files / 30 tests passing
+  - workspace-wide typecheck passes
+  - workspace-wide build passes with the normal required environment variables loaded
+  - real-Postgres tests cover the new `getLeagueDetail` `draft` field (null with no Draft; populated after a real `startDraft` call) and the page's four meaningful render branches (commissioner-not-full, commissioner-full, non-commissioner, Draft-exists), inspected via the page's own returned React element tree rather than a new component-rendering test stack
+  - `StartDraftForm`'s own fetch/pending/navigation interaction has no automated test, consistent with the existing unverified-by-automation precedent for `create-league-form.tsx`, `league-settings-form.tsx`, `member-order-form.tsx`, and `join-league-form.tsx`
+  - manual verification confirmed, on an owned underfilled league with no Draft: the Start Draft control renders, is disabled while underfilled, shows the correct `X/Y joined` values, and does not issue a POST request when interacted with while disabled
+  - manual verification confirmed existing league-detail functionality and `/leagues` → league-detail navigation are unaffected
+  - the enabled/successful start path, non-commissioner rendering, existing-Draft rendering, authorization/error branches, and concurrency behavior remain covered by the automated real-Postgres suite rather than manufactured manual state — `teamCount` has a minimum greater than one (currently 4), membership uniqueness prevents one account from filling multiple slots, and no fake identities or dev-database seeding were used to work around this
 
 ### Current phase
 
-**Phase 3 — Realtime Draft Engine — IN PROGRESS**
+**Phase 4 — Client Experience — IN PROGRESS**
 
 Completed:
 
 - Phase 1 — Foundation — COMPLETE
 - Phase 2 — League Management — COMPLETE
-- Phase 3 Milestone 3.1 — Draft Start — COMPLETE
-- Phase 3 Milestone 3.2 — Transactional Pick Submission — COMPLETE
-- Phase 3 Milestone 3.3a — Shared Draft Service Boundary + Socket Authentication Foundation — COMPLETE
-- Phase 3 Milestone 3.3b — Socket.IO Draft Protocol + Realtime Integration — COMPLETE
-- Phase 3 Milestone 3.4 — Server-Owned Timers + Autopick — COMPLETE
+- Phase 3 — Realtime Draft Engine — COMPLETE (Milestones 3.1, 3.2, 3.3a, 3.3b, 3.4; see "Milestone 3.5 status" below for why there is no separate 3.5)
+- Phase 4 Milestone 4.1 — Commissioner Draft Start UI — COMPLETE
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -498,7 +523,11 @@ Current Phase 3 capabilities:
 - successful autopicks broadcast one authoritative `draft:state` snapshot to the League room; stale/no-op sweep passes do not broadcast
 - authenticated users can browse every League they belong to (owned or joined) at `/leagues`, with links into each League's detail page
 
-Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are now all complete. Phase 3's core engineering goals — server-authoritative state, concurrent pick safety, reconnection resilience, tested concurrency — are satisfied; horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. The reasonable next step is either a Phase 3 close-out/verification pass (in the spirit of Phase 2's 2.5) or moving into Phase 4 (client experience); this has not been decided and should be confirmed with the user before starting new implementation work.
+Current Phase 4 capabilities:
+- commissioners can start a completely filled League's draft directly from `/leagues/[leagueId]`, without needing curl/Postman
+- `/leagues/[leagueId]` reflects Draft existence: no Draft yet routes into a role-appropriate start/status view (disabled progress state or enabled action for the commissioner, status text for everyone else); an existing Draft routes into the draft-room link instead
+
+Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestone 4.1 — Commissioner Draft Start UI is complete. Milestone 4.2 — Draft Room Shell + Live Turn State is the next objective.
 
 ### Not yet implemented
 
@@ -506,6 +535,7 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - immediate Socket.IO publication of successful HTTP-originated mutations
 - event replay or more sophisticated reconnect recovery beyond the basic mint-ticket/rejoin/resync mechanism delivered in 3.3b
 - presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup)
+- chat
 - polished draft-board UI / countdown presentation
 - pause/resume
 - draft/pick undo
@@ -694,6 +724,17 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - restart recovery for timer/autopick state comes from rediscovering expired deadlines in Postgres on the next sweep tick, not from reconstructing in-memory timers
 - the basic reconnect/resync mechanism (fresh SocketTicket, reconnect, `draft:join`, authoritative resync) was delivered in 3.3b and required no changes for 3.4; it already reflects any autopick-driven state that occurred while a client was disconnected
 - `/leagues` lists Leagues by `LeagueMember` membership only; League ownership is never queried separately for this purpose
+- Phase 4 milestones are: 4.1 Commissioner Draft Start UI, 4.2 Draft Room Shell + Live Turn State, 4.3 Available Players + Search/Filtering, 4.4 Production Pick Submission UX, 4.5 Draft Board + Team Rosters, 4.6 Draft Room UX Hardening + Phase 4 Closeout
+- Phase 4 pick submission remains server-authoritative and ack/state-driven; the client renders what `draft:state` and pick acknowledgements say rather than applying an optimistic local update that later rolls back
+- `getLeagueDetail` exposes draft existence as `draft: { id: string } | null`; `status` is intentionally not included because Milestone 4.1 only needs existence — extend the DTO later only when a milestone actually needs more
+- `/leagues/[leagueId]` renders draft entry/start state conditionally rather than an unconditional Draft Room link
+- draft-start UI lives in `apps/web/app/leagues/[leagueId]/start-draft-form.tsx` and calls the existing `POST /api/leagues/[leagueId]/draft` endpoint unchanged; no second draft-start path exists
+- a disabled Start Draft control with membership-progress copy is shown to the commissioner while the league is underfilled; the control is hidden entirely (not just disabled) for non-commissioners
+- a successful draft start navigates the browser to `/leagues/[leagueId]/draft` via `router.push`
+- draft-start errors are mapped to short user-facing copy by HTTP status rather than parsed from the server's error message string
+- the draft-start endpoint's `409` is ambiguous between "already started" and "not full" with no structured code to disambiguate; the UI does not guess — it shows a generic "state changed" message and calls `router.refresh()` to re-derive the correct view from authoritative server state
+- Milestone 4.1 introduced no new frontend state-management infrastructure and no Socket.IO/Phase 3 engine/schema/`packages/shared`/`packages/database` changes
+- `teamCount`'s minimum (currently 4) is not relaxed for local testing convenience; a `teamCount = 1` league is not a legitimate way to manually exercise the full-league draft-start path
 
 ## Non-negotiable engineering goals
 
@@ -1402,6 +1443,8 @@ Server → client: `draft:state` (full snapshot), `pick:made`, `turn:changed`, `
 
 Define these payloads as shared TypeScript types imported by both sides. No stringly-typed event data.
 
+**Superseded by "Socket.IO draft protocol conventions" below.** The list above was written before the protocol was implemented. What actually shipped (Milestone 3.3b) is smaller: `draft:join` and `draft:pick` client→server, one `draft:state` full-snapshot event server→client, and acknowledgement-based error codes instead of a standalone `pick:rejected` event. Draft completion is represented inside `draft:state` rather than a separate `draft:complete` event. `draft:chat`, `draft:requestState`, `pick:made`, `turn:changed`, `timer:tick`, `user:joined`, and `user:left` remain unimplemented/deferred (see "Not yet implemented"); if any are built later they are not guaranteed to keep these exact names.
+
 ### Pick submission — the critical path
 
 Every pick runs inside a single database transaction:
@@ -1414,7 +1457,7 @@ Every pick runs inside a single database transaction:
 6. Compute the next picker and update `draft.currentPickNumber`, `currentUserId`, `turnDeadline`
 7. Commit
 
-If the transaction fails on the unique constraint, emit `pick:rejected` to that client only. Never let a failed pick corrupt draft state or stall the room.
+If the transaction fails (e.g. on the unique constraint), reject the request through the caller's own error path — an HTTP error status, or a Socket.IO acknowledgement error code — rather than a standalone `pick:rejected` event (see "Socket.IO draft protocol conventions"). Never let a failed pick corrupt draft state or stall the room.
 
 ### Turn order
 
@@ -1470,7 +1513,7 @@ Completed Phase 2 surface:
 
 Phase 2 is frozen as a completed foundation unless a later phase exposes a concrete defect. New functionality should be assigned to the appropriate later phase rather than silently expanding Phase 2.
 
-**Phase 3 — Realtime Draft Engine — IN PROGRESS**
+**Phase 3 — Realtime Draft Engine — COMPLETE**
 
 Milestones:
 
@@ -1480,6 +1523,8 @@ Milestones:
 - **3.3b Socket.IO Draft Protocol + Realtime Integration — COMPLETE**
 - **3.4 Server-Owned Timers + Autopick — COMPLETE**
 - **3.5 Reconnect/Resync — already delivered as part of 3.3b's basic mint-ticket/reconnect/rejoin/resync mechanism; no standalone 3.5 implementation work remains.** What's genuinely still open (presence, event replay) is tracked under "Not yet implemented" rather than under this milestone number.
+
+**Phase 3 exit criteria satisfied.** Phase 3 is frozen as a completed foundation, the same way Phase 2 was, unless a later phase exposes a concrete defect.
 
 Milestone 3.3b must:
 - consume the shared persistence services established in 3.3a
@@ -1501,7 +1546,18 @@ Milestone 3.3b must not:
 - add Redis prematurely
 - become the polished draft-room frontend
 
-**Phase 4 — Client experience.** Live draft board. Available players panel with search and position filter. My-roster view. Pick timer. Chat. Presence indicators. Optimistic pick updates that roll back on `pick:rejected`.
+**Phase 4 — Client Experience — IN PROGRESS**
+
+Turns the existing, functionally-complete Phase 3 draft transport into a usable draft-room product: live draft board, available players panel with search and position filter, team rosters, pick timer, and draft-start UI. Pick submission remains server-authoritative and ack/state-driven — the client renders what `draft:state` and pick acknowledgements say, not an optimistic local guess that later rolls back. (This supersedes this section's original "optimistic pick updates that roll back on `pick:rejected`" framing, written before the socket protocol settled on ack-based errors with no standalone `pick:rejected` event — see "Socket.IO draft protocol conventions" above.) Chat and presence indicators remain deferred (see "Not yet implemented"), not committed Phase 4 scope.
+
+Milestones:
+- **4.1 Commissioner Draft Start UI — COMPLETE**
+- **4.2 Draft Room Shell + Live Turn State**
+- **4.3 Available Players + Search/Filtering**
+- **4.4 Production Pick Submission UX**
+- **4.5 Draft Board + Team Rosters**
+- **4.6 Draft Room UX Hardening + Phase 4 Closeout**
+
 *Done when: it feels responsive and nothing desyncs or flickers.*
 
 **Phase 5 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.

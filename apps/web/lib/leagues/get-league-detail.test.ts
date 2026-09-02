@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupLeagueTestData, createTestUser } from "@fdm/database/test-support";
 import { createLeague } from "./create-league";
 import { getLeagueDetail } from "./get-league-detail";
+import { startDraft } from "../drafts/start-draft";
 
 async function createTestLeague(ownerId: string, teamCount = 12) {
   return createLeague(
@@ -130,5 +131,32 @@ describe("getLeagueDetail", () => {
     const result = await getLeagueDetail(league.id, joiner.id);
 
     expect(result?.league.inviteCode).toBe(league.inviteCode);
+  });
+
+  it("returns draft: null when no Draft exists", async () => {
+    const owner = await createTestUser();
+    const { league } = await createTestLeague(owner.id);
+
+    const result = await getLeagueDetail(league.id, owner.id);
+
+    expect(result?.draft).toBeNull();
+  });
+
+  it("returns the Draft id once a Draft exists", async () => {
+    const owner = await createTestUser();
+    const { league } = await createTestLeague(owner.id, 4);
+    const otherUsers = await Promise.all([createTestUser(), createTestUser(), createTestUser()]);
+    await Promise.all(
+      otherUsers.map((user, i) =>
+        prisma.leagueMember.create({
+          data: { leagueId: league.id, userId: user.id, draftSlot: i + 2 },
+        }),
+      ),
+    );
+
+    const { draft } = await startDraft(league.id, owner.id);
+    const result = await getLeagueDetail(league.id, owner.id);
+
+    expect(result?.draft).toEqual({ id: draft.id });
   });
 });

@@ -26,6 +26,11 @@ export interface LeagueDetailResult {
     image: string | null;
     draftSlot: number;
   }>;
+  // Existence only — the page's only question is whether to render a
+  // start-draft control or a link into the draft room. Widen this (e.g. to
+  // include `status`) only when a later milestone actually needs more than
+  // existence, per the Milestone 4.1 DTO-minimality decision.
+  draft: { id: string } | null;
 }
 
 // Membership is enforced as part of the query predicate itself — `where`
@@ -60,6 +65,7 @@ export async function getLeagueDetail(
         },
         orderBy: { draftSlot: "asc" },
       },
+      draft: { select: { id: true } },
     },
   });
 
@@ -92,5 +98,6 @@ export async function getLeagueDetail(
       image: member.user.image,
       draftSlot: member.draftSlot,
     })),
+    draft: league.draft ? { id: league.draft.id } : null,
   };
 }
