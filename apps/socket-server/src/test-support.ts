@@ -37,6 +37,19 @@ export async function addMember(leagueId: string, userId: string, draftSlot: num
   return prisma.leagueMember.create({ data: { leagueId, userId, draftSlot } });
 }
 
+// Fixture-only helper for Milestone 3.4 sweep tests: pushes a Draft's
+// turnDeadline into the past so runSweepOnce()/processExpiredDraftTurn()
+// treat it as expired. Deliberately just a data fixture — the actual sweep
+// behavior under test (runSweepOnce, startTurnSweep, stopTurnSweep) is
+// imported directly from ./timers/sweep.js by sweep.test.ts, not re-exported
+// from here.
+export async function expireDraftNow(draftId: string) {
+  return prisma.draft.update({
+    where: { id: draftId },
+    data: { turnDeadline: new Date(Date.now() - 1_000) },
+  });
+}
+
 // Creates a fully-filled ACTIVE draft directly via prisma (owner at slot 1,
 // generated members filling the rest). Deliberately not reusing apps/web's
 // startDraft service — apps/socket-server must not import apps/web

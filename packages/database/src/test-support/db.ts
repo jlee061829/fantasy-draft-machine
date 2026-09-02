@@ -70,7 +70,7 @@ export async function createTestUser(
 }
 
 export async function createTestPlayer(
-  overrides: Partial<{ fullName: string; position: string }> = {},
+  overrides: Partial<{ fullName: string; position: string; searchRank: number | null }> = {},
 ) {
   assertUsingTestDatabase();
   const suffix = randomUUID();
@@ -79,6 +79,7 @@ export async function createTestPlayer(
       sleeperId: `test-${suffix}`,
       fullName: overrides.fullName ?? "Test Player",
       position: overrides.position ?? "RB",
+      searchRank: overrides.searchRank ?? null,
     },
   });
 }

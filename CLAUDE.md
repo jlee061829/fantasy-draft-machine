@@ -8,7 +8,7 @@ This is a portfolio project. The point is not to compete with Sleeper or ESPN �
 
 ## Current implementation status
 
-Last updated: August 2026
+Last updated: September 2026
 
 ### Completed
 
@@ -401,6 +401,56 @@ Last updated: August 2026
   - manual refresh verification confirmed a fresh SocketTicket is minted and authoritative state is restored
   - manual two-tab verification confirmed independent simultaneous sockets for the same authenticated user
   - socket server remained error-free during solo-reachable manual verification
+- Phase 3 Milestone 3.4 — Server-Owned Timers + Autopick:
+  - added a single recurring turn-expiration sweep owned by `apps/socket-server`, not one timer per Draft
+  - the sweep is a self-rescheduling `setTimeout`, not `setInterval`: the next tick is only scheduled after the current `runSweepOnce()` promise settles, so ticks can never overlap
+  - production sweep interval defaults to 2000ms (`DEFAULT_SWEEP_INTERVAL_MS`); `startTurnSweep(io, { intervalMs })` accepts an override used only by tests
+  - the sweep is started from `index.ts`'s real process lifecycle (after `httpServer.listen`) and stopped on `SIGINT`/`SIGTERM`, not from `createSocketServer()` — so tests building a server via `createSocketServer()`/`startTestServer()` never silently inherit a live background DB-polling interval
+  - graceful shutdown calls `stopTurnSweep()` before closing Socket.IO and disconnecting Prisma
+  - each tick discovers candidates with a plain, unlocked `findExpiredActiveDraftLeagueIds()` read (`Draft.status = ACTIVE AND turnDeadline <= now`)
+  - restart recovery needs no in-memory timer reconstruction: a freshly started process rediscovers exactly the same expired/future deadlines a long-running process would, because discovery is a live Postgres read
+  - a Draft whose deadline is still in the future simply becomes eligible on a later tick
+  - the sweep processes Drafts correctly with zero connected Socket.IO clients
+  - `processExpiredDraftTurn` is the autopick counterpart to `submitPick`: it locks the same Draft row (`lockDraftForLeague`, `SELECT ... FOR UPDATE`) and re-checks expiry *inside* the lock
+  - a stale/no-op candidate (turn already consumed by a manual pick or another sweep pass, Draft no longer `ACTIVE`, deadline no longer past) returns a `"skipped"` outcome rather than throwing or double-picking
+  - manual picks and autopicks serialize on the identical Draft-row lock, so a manual-pick-vs-autopick race and a duplicate-sweep-vs-sweep race both resolve to exactly one turn consumer
+  - manual and automatic picks share the same internal `applyPick(...)` Pick-insert/completion/turn-advance logic, differing only in `wasAutopick` and player selection
+  - `submitPick` and `processExpiredDraftTurn` are the two public pick-correctness services; `lockDraftForLeague`, `applyPick`, and `selectAutopickPlayerId` are internal `@fdm/database` implementation details, not part of the public surface
+  - Postgres remains the sole authoritative correctness boundary
+  - autopick selection (`selectAutopickPlayerId`) persists `Pick.wasAutopick = true` and is two-tier: lowest available `PlayerAdp.adp` for the League's scoring format, falling back to lowest `Player.searchRank` (nulls last) with `id asc` as a final deterministic tiebreak
+  - already-drafted Players are excluded by both selection queries
+  - no roster-position enforcement exists yet; selection is position-agnostic
+  - an exhausted undrafted-Player pool throws `AutopickExhaustedError`, treated as an internal data/configuration invariant failure — logged and left for a later sweep tick rather than crashing the sweep for other leagues
+  - post-autopick turn progression uses the same shared `getPickerForPickNumber` SNAKE/LINEAR logic as manual picks
+  - the final autopick of a Draft transitions it to `COMPLETE` with `currentUserId = null` and `turnDeadline = null`, identically to a final manual pick
+  - a successful autopick re-reads authoritative state and broadcasts one full `draft:state` snapshot to `league:${leagueId}` via `broadcastDraftState(...)`, the same helper accepted socket manual picks use
+  - a stale/no-op sweep pass does not broadcast
+  - Socket.IO remains a delivery mechanism; it is not part of the correctness boundary
+- Milestone 3.4 verification:
+  - `packages/database`: 8 test files / 75 tests passing
+  - `apps/web`: 20 test files / 187 tests passing (before the later `/leagues` index page and its tests)
+  - `apps/socket-server`: 5 test files / 30 tests passing
+  - workspace-wide typecheck passes
+  - database, socket-server, and web builds pass with required development environment variables loaded
+  - automated coverage includes: normal autopick and `wasAutopick` persistence, SNAKE/LINEAR progression after autopick, deadline advancement, final-autopick completion, stale-timer no-op (already manually picked, not-yet-expired, no-Draft, already-`COMPLETE`), a manual-pick-vs-autopick race resolving to exactly one accepted pick, a concurrent autopick-vs-autopick race resolving to exactly one Pick, deterministic ADP-then-searchRank player selection, already-drafted-Player exclusion, the exhausted-player-pool invariant (`AutopickExhaustedError`), expired-draft discovery including a restart-recovery shape (an already-expired draft is processed on the very first sweep tick of a freshly started process), autopick processing with zero connected clients, authoritative `draft:state` broadcast on a successful autopick, no broadcast on a no-op sweep pass, and sweep start/stop/self-rescheduling behavior
+  - solo-reachable manual verification: socket server started with the real 2000ms sweep; the Draft Room harness still authenticated, joined, and resynced correctly with the sweep running; browser refresh minted a fresh SocketTicket and restored authoritative state; process shutdown stopped the sweep and exited cleanly
+  - ACTIVE-draft timer-expiry, autopick, and race behavior were intentionally verified through the automated real-Postgres suite above rather than through fake local identities or manual database corruption, since the local OAuth setup has only one real account
+- `/leagues` navigation index page:
+  - lists every League where the authenticated user has a `LeagueMember` row
+  - `LeagueMember` membership is the sole source of truth for both owned and joined Leagues; there is no separate `ownerId` query
+  - `getMyLeagues(userId)` in `apps/web/lib/leagues/get-my-leagues.ts` returns an explicit `MyLeagueSummary[]` DTO rather than exposing raw Prisma rows
+  - each listed League links to `/leagues/[leagueId]`
+  - Leagues the user owns show a commissioner indication
+  - basic League metadata is shown: name, team count, scoring format, draft type
+  - Create League and Join League navigation is always available
+  - the empty state (no Leagues) links to `/leagues/new` and `/leagues/join`
+  - unauthenticated access follows the same inline GitHub sign-in fallback used by the other league pages
+  - added as a small navigation feature, not a Phase 3 milestone; introduces no new API route and no schema change
+- `/leagues` verification:
+  - `apps/web`: 22 test files / 194 tests passing
+  - workspace-wide typecheck passes
+  - workspace-wide build passes with `/leagues` registered
+  - manual verification confirmed an existing created League appears with correct commissioner indication and metadata, its detail link works, Create/Join navigation works, and signed-out access shows the normal sign-in fallback
 
 ### Current phase
 
@@ -414,22 +464,22 @@ Completed:
 - Phase 3 Milestone 3.2 — Transactional Pick Submission — COMPLETE
 - Phase 3 Milestone 3.3a — Shared Draft Service Boundary + Socket Authentication Foundation — COMPLETE
 - Phase 3 Milestone 3.3b — Socket.IO Draft Protocol + Realtime Integration — COMPLETE
+- Phase 3 Milestone 3.4 — Server-Owned Timers + Autopick — COMPLETE
 
-Current milestone: **Milestone 3.4 — Server-Owned Timers + Autopick**
+Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
 Current Phase 3 capabilities:
 - a completely filled League can be started by its commissioner
 - draft start creates the League's single Draft directly as `ACTIVE`
 - initial picker and turn deadline are server-derived
-- draft order is defined by tested persistence-independent shared logic
+- draft order is defined by tested persistence-independent shared logic, used by draft start, manual picks, socket picks, and autopick alike
 - simultaneous start attempts cannot create duplicate Drafts
 - league settings and draft-slot order become immutable once a Draft exists
-- authenticated LeagueMembers can submit manual picks through the HTTP pick endpoint
+- authenticated LeagueMembers can submit manual picks through the HTTP pick endpoint or realtime `draft:pick`
 - pick submission is server-authoritative and transactionally serialized on the Draft row
-- exactly one concurrent submission can consume a turn
+- exactly one concurrent submission — manual or automatic — can consume a turn
 - successful picks atomically persist the Pick and advance Draft state
-- SNAKE and LINEAR turn progression use shared draft-order logic
-- the final pick atomically transitions the Draft to `COMPLETE`
+- the final pick, manual or automatic, atomically transitions the Draft to `COMPLETE`
 - shared Prisma-dependent draft services live in `@fdm/database`
 - authoritative draft-state DTO types live in persistence-independent `@fdm/shared`
 - authenticated web sessions can mint short-lived, single-use SocketTickets
@@ -438,28 +488,28 @@ Current Phase 3 capabilities:
 - authenticated LeagueMembers can join league-scoped realtime rooms
 - room joins return authoritative Postgres-backed draft state
 - realtime picks use the same shared transactional `submitPick` service as HTTP picks
-- accepted socket picks broadcast a full authoritative `draft:state` snapshot
-- rejected socket picks return acknowledgement error codes and do not broadcast successful state
+- accepted socket picks broadcast a full authoritative `draft:state` snapshot; rejected socket picks return acknowledgement error codes and do not broadcast
 - multiple sockets/tabs for the same authenticated user are supported
 - reconnecting clients mint a fresh SocketTicket, reconnect, rejoin, and resync authoritative state
+- `apps/socket-server` runs a single recurring, self-rescheduling turn-expiration sweep (default 2000ms) instead of one timer per Draft
+- expired ACTIVE Drafts are discovered from live Postgres state, so a restarted socket-server process rediscovers exactly the same expired/future deadlines with no in-memory timer reconstruction
+- expired turns are autopicked deterministically (ADP → searchRank → id) and persisted with `Pick.wasAutopick = true`
+- manual picks and autopicks serialize on the same Draft-row lock and share the same internal pick-application/progression logic
+- successful autopicks broadcast one authoritative `draft:state` snapshot to the League room; stale/no-op sweep passes do not broadcast
+- authenticated users can browse every League they belong to (owned or joined) at `/leagues`, with links into each League's detail page
 
-Next objective: implement server-owned turn expiration and autopick while preserving Postgres as the authoritative correctness boundary and ensuring timer/manual-pick races cannot consume the same turn twice.
-
-Phase 3 remains in progress.
+Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are now all complete. Phase 3's core engineering goals — server-authoritative state, concurrent pick safety, reconnection resilience, tested concurrency — are satisfied; horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. The reasonable next step is either a Phase 3 close-out/verification pass (in the spirit of Phase 2's 2.5) or moving into Phase 4 (client experience); this has not been decided and should be confirmed with the user before starting new implementation work.
 
 ### Not yet implemented
 
-- server-owned turn-expiration processing
-- autopick selection
-- timer/manual-pick race handling
 - Redis-backed cross-process/multi-instance realtime publication
 - immediate Socket.IO publication of successful HTTP-originated mutations
-- event replay or more sophisticated reconnect recovery
-- presence
-- polished draft-board UI
+- event replay or more sophisticated reconnect recovery beyond the basic mint-ticket/rejoin/resync mechanism delivered in 3.3b
+- presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup)
+- polished draft-board UI / countdown presentation
 - pause/resume
 - draft/pick undo
-- roster-position enforcement if later required
+- roster-position enforcement, including roster-aware autopick selection, if later required
 - ML recommendation system
 - GitHub Actions CI
 
@@ -632,6 +682,18 @@ Phase 3 remains in progress.
 - HTTP-originated mutations are not bridged into Socket.IO in 3.3
 - do not add a temporary HTTP-to-socket broadcast bridge
 - Redis remains deferred until cross-process/multi-instance realtime publication is actually required
+- Postgres remains the sole authoritative correctness boundary for turn expiration and autopick, exactly as it already is for manual pick submission
+- `apps/socket-server` owns turn-deadline polling; it is not owned by `apps/web` or by a database-level background job
+- turn expiration uses one recurring sweep, not one timer per Draft
+- the sweep interval currently defaults to 2000ms and is configurable per call for tests; it is not an environment variable
+- manual pick submission and automatic turn expiration serialize on the identical Draft-row lock; neither can consume a turn the other has already consumed
+- a sweep pass that finds a turn already advanced (by a manual pick or another sweep pass) is a routine no-op, not an error
+- autopick selection order is: lowest available ADP for the League's scoring format, then lowest `searchRank` (nulls last), then `id` ascending as a final deterministic tiebreak
+- autopick does not yet consider roster position
+- Socket.IO broadcasts authoritative state only after a real (non-no-op) turn-consuming mutation, manual or automatic
+- restart recovery for timer/autopick state comes from rediscovering expired deadlines in Postgres on the next sweep tick, not from reconstructing in-memory timers
+- the basic reconnect/resync mechanism (fresh SocketTicket, reconnect, `draft:join`, authoritative resync) was delivered in 3.3b and required no changes for 3.4; it already reflects any autopick-driven state that occurred while a client was disconnected
+- `/leagues` lists Leagues by `LeagueMember` membership only; League ownership is never queried separately for this purpose
 
 ## Non-negotiable engineering goals
 
@@ -765,9 +827,10 @@ The current monorepo boundary is:
   - Prisma client/schema/generated types
   - shared persistence-dependent services used by multiple application transports
   - shared persistence/domain errors required by those services
-  - authoritative draft mutation/query services such as `submitPick`, `getDraftState`, and `getDraftStateForLeague`
+  - authoritative draft mutation/query services such as `submitPick`, `getDraftState`, `getDraftStateForLeague`, `processExpiredDraftTurn`, and `findExpiredActiveDraftLeagueIds`
   - socket-ticket persistence services
   - test-only database helpers exposed separately through `@fdm/database/test-support`
+  - `lockDraftForLeague`, `applyPick`, and `selectAutopickPlayerId` are internal implementation details shared between `submitPick` and `processExpiredDraftTurn`, not part of the package's public surface
 
 - `apps/web`
   - Next.js HTTP/Auth/UI adapter
@@ -775,7 +838,8 @@ The current monorepo boundary is:
   - must call shared persistence services rather than duplicating their transaction logic
 
 - `apps/socket-server`
-  - Socket.IO/auth/room transport adapter
+  - Socket.IO/auth/room transport adapter, plus server-side turn-expiration timer orchestration
+  - owns the recurring turn-expiration sweep that triggers autopick via `@fdm/database`
   - may consume `@fdm/database` and `@fdm/shared`
   - must not import implementation code from `apps/web`
   - must not duplicate authoritative pick transaction logic
@@ -1038,6 +1102,30 @@ Authoritative state resync, rather than replaying every missed realtime event, i
 
 More sophisticated reconnect/recovery behavior may be added later only if required.
 
+### Turn-expiration and autopick conventions
+
+`apps/socket-server` owns a single recurring, self-rescheduling turn-expiration sweep (`startTurnSweep`/`stopTurnSweep`/`runSweepOnce`, default interval 2000ms via `DEFAULT_SWEEP_INTERVAL_MS`), started from `index.ts`'s real process lifecycle and stopped on graceful shutdown. It is not started inside `createSocketServer()`, so tests that build a server via `createSocketServer()`/`startTestServer()` never silently inherit a live background DB-polling interval.
+
+Each tick:
+
+1. `findExpiredActiveDraftLeagueIds()` — a plain, unlocked Postgres read for `Draft.status = ACTIVE AND turnDeadline <= now`
+2. for each candidate League, `processExpiredDraftTurn(leagueId)` locks the Draft row (`lockDraftForLeague`, the same lock `submitPick` uses) and re-validates expiry *inside* the lock
+3. a candidate that went stale between discovery and lock acquisition (already picked, no longer `ACTIVE`, deadline no longer past) returns a `"skipped"` outcome — a routine no-op, not an error
+4. a genuinely expired turn selects the next Pick via `selectAutopickPlayerId` and applies it through the same internal `applyPick(...)` used by `submitPick`, with `wasAutopick: true`
+5. only a `"picked"` outcome triggers `broadcastDraftState(...)` — one authoritative `draft:state` snapshot to `league:${leagueId}`
+
+Because manual picks and autopicks lock and re-validate against the identical Draft row, a manual-pick-vs-autopick race and a duplicate-sweep-vs-sweep race both resolve to exactly one turn consumer — the same guarantee Milestone 3.2 established for concurrent manual submissions.
+
+Autopick player selection (`selectAutopickPlayerId`), scoped to Players not yet drafted in the Draft:
+- tier 1: lowest `PlayerAdp.adp` for the League's `scoringFormat`
+- tier 2 (fallback when no undrafted Player has an ADP row for that format): lowest `Player.searchRank`, nulls last, `id asc` as a final deterministic tiebreak
+- no roster-position awareness yet
+- an exhausted pool (no undrafted Player at all) throws `AutopickExhaustedError` — an internal data/configuration invariant failure (the seeded Player pool is smaller than `teamCount * rosterSize`), not a normal skip; it is logged and left for a later sweep tick rather than crashing the sweep for other leagues. This is expected to remain retryable-but-failing until the underlying seed/roster-size mismatch is corrected — it is not something later sweeps are expected to resolve on their own.
+
+Restart recovery is a byproduct of polling live Postgres state rather than a separate feature: a freshly started socket-server process discovers exactly the same expired/future deadlines a long-running process would, with no in-memory timer state to reconstruct.
+
+Public correctness services: `submitPick` (manual) and `processExpiredDraftTurn` (automatic). `lockDraftForLeague`, `applyPick`, and `selectAutopickPlayerId` are internal `@fdm/database` implementation details, not part of the public surface.
+
 #### Pick submission status conventions
 
 - unauthenticated → `401`
@@ -1078,7 +1166,7 @@ Example for 12 teams:
 - pick 24 → slot 1
 - pick 25 → slot 1
 
-This function lives in `packages/shared` because both web-side draft initialization and the future socket server require identical turn-order behavior.
+This function lives in `packages/shared` because draft start, manual pick submission (HTTP and socket), and server-owned autopick all require identical turn-order behavior.
 
 It must remain persistence-independent.
 
@@ -1334,11 +1422,11 @@ Snake: odd rounds go slot 1 → N, even rounds go N → 1. Linear: always 1 → 
 
 ### Timers
 
-The server owns the deadline. Store `turnDeadline` on the draft row and mirror it in Redis with a TTL. Clients receive the deadline timestamp and render their own countdown — they never report expiry.
+The server owns the deadline. `turnDeadline` lives on the `Draft` row in Postgres; there is no Redis mirror — `apps/socket-server` discovers expired deadlines directly from Postgres on each sweep tick (see Turn-expiration and autopick conventions above; implemented in Milestone 3.4).
 
-When a deadline passes, the server autopicks: the best available player by ADP (ascending), falling back to `search_rank`. Mark the pick `wasAutopick: true`.
+When a deadline passes, the server autopicks: the best available player by ADP (ascending) for the League's scoring format, falling back to `searchRank`. The pick is marked `wasAutopick: true`.
 
-Use a single interval on the socket server that checks for expired deadlines, not one timer per draft.
+A single self-rescheduling sweep on the socket server checks for expired deadlines (default every 2000ms), not one timer per draft.
 
 ### Multi-instance fanout
 
@@ -1390,8 +1478,8 @@ Milestones:
 - **3.2 Transactional Pick Submission — COMPLETE**
 - **3.3a Shared Draft Service Boundary + Socket Authentication Foundation — COMPLETE**
 - **3.3b Socket.IO Draft Protocol + Realtime Integration — COMPLETE**
-- **3.4 Server-Owned Timers + Autopick — CURRENT**
-- **3.5 Reconnect/Resync — PLANNED**
+- **3.4 Server-Owned Timers + Autopick — COMPLETE**
+- **3.5 Reconnect/Resync — already delivered as part of 3.3b's basic mint-ticket/reconnect/rejoin/resync mechanism; no standalone 3.5 implementation work remains.** What's genuinely still open (presence, event replay) is tracked under "Not yet implemented" rather than under this milestone number.
 
 Milestone 3.3b must:
 - consume the shared persistence services established in 3.3a

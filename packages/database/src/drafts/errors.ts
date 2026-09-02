@@ -101,3 +101,20 @@ export class PickAdvanceInvariantError extends Error {
     this.name = "PickAdvanceInvariantError";
   }
 }
+
+// Thrown by processExpiredDraftTurn (Milestone 3.4) when neither the
+// ADP-based tier nor the searchRank/id fallback tier can find any
+// undrafted Player for the format-in-progress. Under this Draft-row lock,
+// that means the seeded Player pool is smaller than
+// League.teamCount * League.rosterSize — a data/configuration problem, not
+// a legitimate runtime conflict. Deliberately NOT one of the domain errors
+// mapped to a 4xx/socket error code; the turn-expiry sweep logs it and
+// leaves the draft's turnDeadline untouched so the next sweep tick simply
+// retries (and will keep failing identically until the underlying player
+// pool is fixed).
+export class AutopickExhaustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AutopickExhaustedError";
+  }
+}

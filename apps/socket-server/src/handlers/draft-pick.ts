@@ -5,11 +5,11 @@ import {
   NotOnTheClockError,
   PlayerAlreadyDraftedError,
   PlayerNotFoundError,
-  getDraftStateForLeague,
   submitPick,
 } from "@fdm/database";
 import type { DraftPickAck, DraftPickPayload, SocketErrorCode } from "@fdm/shared";
 import { leagueRoomName } from "../rooms.js";
+import { broadcastDraftState } from "../timers/broadcast.js";
 import type { DraftServer, DraftSocket } from "../types.js";
 import { draftPickPayloadSchema } from "../validation.js";
 
@@ -76,8 +76,5 @@ export async function handleDraftPick(
 
   ack({ ok: true });
 
-  const state = await getDraftStateForLeague(leagueId);
-  if (state) {
-    io.to(room).emit("draft:state", state);
-  }
+  await broadcastDraftState(io, leagueId);
 }
