@@ -3,14 +3,13 @@ import { notFound } from "next/navigation";
 import { auth, signIn } from "../../../../lib/auth";
 import { DraftRoomClient } from "./DraftRoomClient";
 
-// Milestone 3.3b manual-verification harness: minimal, unstyled, just
-// enough to exercise the Socket.IO transport as an authenticated league
-// member (ticket mint -> connect -> draft:join -> authoritative state).
-// Not the polished draft board — that's Phase 4. Auth-gate and
-// notFound() collapse mirror the league detail page
+// Auth-gate and notFound() collapse mirror the league detail page
 // (app/leagues/[leagueId]/page.tsx): nonexistent league and authenticated
 // non-member both resolve to notFound() via getDraftState's own null
 // collapse, so this page never branches on which of those two occurred.
+// currentUserId is passed down so DraftRoomClient can derive "your turn"
+// from authoritative state + authenticated identity without a second,
+// client-side session fetch (Milestone 4.2).
 export default async function DraftRoomPage({
   params,
 }: {
@@ -41,5 +40,11 @@ export default async function DraftRoomPage({
     notFound();
   }
 
-  return <DraftRoomClient leagueId={leagueId} initialState={initialState} />;
+  return (
+    <DraftRoomClient
+      leagueId={leagueId}
+      currentUserId={session.user.id}
+      initialState={initialState}
+    />
+  );
 }

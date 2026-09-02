@@ -479,6 +479,37 @@ Last updated: September 2026
   - manual verification confirmed, on an owned underfilled league with no Draft: the Start Draft control renders, is disabled while underfilled, shows the correct `X/Y joined` values, and does not issue a POST request when interacted with while disabled
   - manual verification confirmed existing league-detail functionality and `/leagues` → league-detail navigation are unaffected
   - the enabled/successful start path, non-commissioner rendering, existing-Draft rendering, authorization/error branches, and concurrency behavior remain covered by the automated real-Postgres suite rather than manufactured manual state — `teamCount` has a minimum greater than one (currently 4), membership uniqueness prevents one account from filling multiple slots, and no fake identities or dev-database seeding were used to work around this
+- Phase 4 Milestone 4.2 — Draft Room Shell + Live Turn State:
+  - `DraftRoomPage` now passes the authenticated `session.user.id` into `DraftRoomClient` as `currentUserId`
+  - `DraftRoomClient` remains the single owner of the Socket.IO connection and the authoritative `DraftStateResult`; no second draft-state model was introduced
+  - `draft:join` ack and `draft:state` events continue to replace the authoritative snapshot wholesale, unchanged from 3.3b
+  - no Redux, Zustand, Context, or reducer was introduced; current-picker name, `"your turn"`, draft phase, and countdown display are all derived at render time rather than stored
+  - current picker name is derived from authoritative `state.members` + `state.draft.currentUserId`, with a safe fallback for an unmatched `currentUserId`
+  - `"your turn"` is derived from authoritative state + authenticated `currentUserId`; it is not stored separately
+  - the draft room now presents human-readable no-Draft / ACTIVE / COMPLETE state instead of a raw debug dump of `currentUserId` and status fields
+  - added pure, DOM-free helpers in `draft-room-helpers.ts` (`getDraftPhase`, `getCurrentPickerName`, `isYourTurn`, `getMsRemaining`, `formatCountdown`) and two small presentational components, `ConnectionStatusBadge` and `TurnBanner`
+  - connection presentation now supports `"connecting" | "connected" | "reconnecting" | "error"`, and the last authoritative snapshot remains rendered through a temporary disconnect rather than being cleared
+  - the existing reconnect architecture is unchanged: fresh SocketTicket → reconnect → `connect` → `draft:join` → authoritative resync
+  - Socket.IO's Manager-level reconnect events (`reconnect_attempt`, `reconnect_failed`) are registered on `socket.io`, not `socket`, per the installed socket.io-client 4.8.3 `SocketReservedEvents`/`ManagerReservedEvents` split — verified against the installed source rather than assumed
+  - `socket.active` (a documented public property cleared by `Socket.destroy()`) distinguishes a `connect_error`/`disconnect` Socket.IO will keep retrying on its own (a transport-level failure) from one where it has permanently stopped (a handshake `CONNECT_ERROR` from a rejected SocketTicket, or `"io server disconnect"`) — verified against the installed socket.io-client source: a rejected ticket's `CONNECT_ERROR` packet calls `Socket.destroy()`, which, since this app has only one namespace socket, makes the Manager set `skipReconnect = true` and give up for good with no further event ever firing
+  - ticket-mint rejection inside the Socket.IO `auth` callback is caught and maps to the `"error"` connection state; no unhandled Promise rejection occurs
+  - client countdown is presentation-only: authoritative `turnDeadline` plus a local `now` tick (updated roughly once per second, only while an ACTIVE draft has a deadline) derive `msRemaining` via `getMsRemaining`; `msRemaining` itself is not stored, and a new authoritative deadline updates the display automatically with no manual reset logic
+  - the countdown clamps at `0:00` and never advances the draft, triggers autopick, mutates authoritative state, or disables anything based only on the local clock
+  - the temporary manual player-ID pick form remains, relabeled as a clearly-marked debug/development control, until Milestone 4.4 replaces it with production pick UX
+  - no available-player board/search/filtering (4.3), no production pick-selection UX (4.4), and no draft board/roster UI (4.5) were implemented
+  - no Tailwind or other global styling infrastructure was added; styling uses only inline `style` props already available in the existing unstyled pages — Tailwind is named in this file's Stack table but was never actually installed anywhere in the repository, which is a documentation/styling-system decision to revisit later, not a claim that Tailwind currently exists
+  - no Phase 3 engine/protocol/database correctness behavior changed
+- Milestone 4.2 verification:
+  - `apps/web`: 23 test files / 219 tests passing
+  - `packages/database`: 8 test files / 75 tests passing
+  - `apps/socket-server`: 5 test files / 30 tests passing
+  - workspace-wide typecheck passes
+  - workspace-wide build passes with the required environment variables loaded
+  - new deterministic unit tests cover draft phase (no-Draft/ACTIVE/COMPLETE), current-picker name resolution including an unmatched-`currentUserId` fallback, `"your turn"` derivation, `getMsRemaining` for null/future/past deadlines, and `formatCountdown` including zero-clamping and floor-not-round behavior
+  - `page.test.ts` was extended to verify `currentUserId` is threaded from the authenticated session into `DraftRoomClient`'s own returned element, without a rendering/DOM test stack
+  - manual verification confirmed, on the one real account's own league with no Draft: direct navigation to `/leagues/[leagueId]/draft` renders the shell correctly, "Draft has not started yet" renders, the authenticated member is marked `(you)`, raw current-user-ID presentation is gone, and the temporary pick form is clearly labeled as a debug control
+  - manual verification confirmed the connection lifecycle: initial "Connecting…" to "Live"; stopping the socket server transitions to "Reconnecting…" while preserving the last authoritative snapshot; restarting the socket server returns to "Live" and resyncs authoritative state without a browser refresh; a page refresh reconnects normally; no unexpected console errors or unhandled Promise rejections were observed across connect/disconnect/reconnect/refresh
+  - ACTIVE-draft countdown, current-picker/"your turn" rendering for someone else's turn, COMPLETE-draft rendering, and autopick-driven UI updates could not be legitimately reproduced manually because the development `Draft` table currently contains no Drafts and only one real OAuth identity exists locally; these remain verified through the deterministic unit tests above plus the existing Phase 3 `packages/database`/`apps/socket-server` real-Postgres/real-socket suites rather than through fabricated identities or dev-database seeding
 
 ### Current phase
 
@@ -490,6 +521,7 @@ Completed:
 - Phase 2 — League Management — COMPLETE
 - Phase 3 — Realtime Draft Engine — COMPLETE (Milestones 3.1, 3.2, 3.3a, 3.3b, 3.4; see "Milestone 3.5 status" below for why there is no separate 3.5)
 - Phase 4 Milestone 4.1 — Commissioner Draft Start UI — COMPLETE
+- Phase 4 Milestone 4.2 — Draft Room Shell + Live Turn State — COMPLETE
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -526,8 +558,10 @@ Current Phase 3 capabilities:
 Current Phase 4 capabilities:
 - commissioners can start a completely filled League's draft directly from `/leagues/[leagueId]`, without needing curl/Postman
 - `/leagues/[leagueId]` reflects Draft existence: no Draft yet routes into a role-appropriate start/status view (disabled progress state or enabled action for the commissioner, status text for everyone else); an existing Draft routes into the draft-room link instead
+- the draft room at `/leagues/[leagueId]/draft` presents human-readable no-Draft / ACTIVE / COMPLETE state, current-picker identity, "your turn" emphasis, and a cosmetic countdown derived from authoritative `turnDeadline`, instead of raw debug fields
+- the draft room's realtime connection state (connecting/live/reconnecting/error) is presented accurately, distinguishing Socket.IO failures that will retry automatically from ones that will not (via `socket.active`), while always preserving the last authoritative snapshot through a temporary disconnect
 
-Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestone 4.1 — Commissioner Draft Start UI is complete. Milestone 4.2 — Draft Room Shell + Live Turn State is the next objective.
+Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestones 4.1 — Commissioner Draft Start UI and 4.2 — Draft Room Shell + Live Turn State are complete. Milestone 4.3 — Available Players + Search/Filtering is the next objective.
 
 ### Not yet implemented
 
@@ -536,7 +570,7 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - event replay or more sophisticated reconnect recovery beyond the basic mint-ticket/rejoin/resync mechanism delivered in 3.3b
 - presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup)
 - chat
-- polished draft-board UI / countdown presentation
+- polished draft-board UI (a basic, cosmetic turn countdown shipped in Milestone 4.2 — see Milestone 4.5 for the draft board itself)
 - pause/resume
 - draft/pick undo
 - roster-position enforcement, including roster-aware autopick selection, if later required
@@ -735,6 +769,15 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - the draft-start endpoint's `409` is ambiguous between "already started" and "not full" with no structured code to disambiguate; the UI does not guess — it shows a generic "state changed" message and calls `router.refresh()` to re-derive the correct view from authoritative server state
 - Milestone 4.1 introduced no new frontend state-management infrastructure and no Socket.IO/Phase 3 engine/schema/`packages/shared`/`packages/database` changes
 - `teamCount`'s minimum (currently 4) is not relaxed for local testing convenience; a `teamCount = 1` league is not a legitimate way to manually exercise the full-league draft-start path
+- `DraftRoomClient` is the single owner of both the Socket.IO connection and the authoritative `DraftStateResult`; child presentational components receive derived props rather than owning any draft state themselves
+- current-picker name, `"your turn"`, draft phase, and countdown are always derived from authoritative state (plus authenticated `currentUserId` and a local `now` tick for the countdown) rather than stored as independent state
+- connection UI state (`"connecting" | "connected" | "reconnecting" | "error"`) is presentation-only and does not affect draft correctness
+- `socket.active` is the basis for distinguishing a Socket.IO failure that will retry automatically from one that will not, rather than assuming every `connect_error`/`disconnect` behaves the same way
+- Socket.IO Manager-level reconnection events (`reconnect_attempt`, `reconnect_failed`) must be registered on `socket.io`, not `socket` — the installed socket.io-client version does not define them on `Socket` itself
+- client-side turn countdowns are cosmetic only; they must never advance the draft, trigger autopick, mutate authoritative state, or disable functionality on their own
+- the temporary manual player-ID pick form remains a labeled debug/development control through Milestone 4.3; Milestone 4.4 owns replacing it with production pick UX
+- no new frontend state-management library (Redux/Zustand/Context/reducer) will be introduced for draft-room state unless a later milestone demonstrates a concrete need beyond derived-from-authoritative-state logic
+- Tailwind CSS is named in this document's Stack table but is not currently installed anywhere in the repository; no styling framework was added in Milestone 4.2, and this mismatch is a documentation/styling-system decision to revisit later rather than a statement that Tailwind exists today
 
 ## Non-negotiable engineering goals
 
@@ -1552,7 +1595,7 @@ Turns the existing, functionally-complete Phase 3 draft transport into a usable 
 
 Milestones:
 - **4.1 Commissioner Draft Start UI — COMPLETE**
-- **4.2 Draft Room Shell + Live Turn State**
+- **4.2 Draft Room Shell + Live Turn State — COMPLETE**
 - **4.3 Available Players + Search/Filtering**
 - **4.4 Production Pick Submission UX**
 - **4.5 Draft Board + Team Rosters**

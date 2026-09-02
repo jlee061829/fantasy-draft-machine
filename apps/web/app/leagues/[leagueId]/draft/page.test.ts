@@ -87,4 +87,19 @@ describe("DraftRoomPage", () => {
 
     expect(notFoundMock).not.toHaveBeenCalled();
   });
+
+  it("threads the authenticated session's userId into DraftRoomClient as currentUserId", async () => {
+    const owner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+    const { league } = await testLeague(owner.id);
+
+    const element = await DraftRoomPage({ params: paramsFor(league.id) });
+
+    // DraftRoomPage renders <DraftRoomClient ... /> directly (no wrapping
+    // fragment), so its returned element's own props carry currentUserId —
+    // no rendering/DOM needed to verify it made it through.
+    expect((element as unknown as { props: { currentUserId: string } }).props.currentUserId).toBe(
+      owner.id,
+    );
+  });
 });
