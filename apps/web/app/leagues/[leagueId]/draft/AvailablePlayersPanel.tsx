@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { AvailablePlayer } from "../../../../lib/players/get-available-players";
 import {
   ALL_POSITIONS_FILTER,
+  computeAdpRanks,
   filterAvailablePlayers,
   type PositionFilter,
 } from "./available-players-helpers";
@@ -17,6 +18,9 @@ const POSITIONS: readonly string[] = ["QB", "RB", "WR", "TE", "K", "DEF"];
 interface AvailablePlayersPanelProps {
   players: AvailablePlayer[];
   draftedPlayerIds: Set<string>;
+  canDraft: boolean;
+  pendingPlayerId: string | null;
+  onDraft: (playerId: string) => void;
 }
 
 // Milestone 4.3: read-only player discovery. Owns its own search/position
@@ -25,10 +29,20 @@ interface AvailablePlayersPanelProps {
 // Player identity/availability itself remains entirely prop-driven, so a
 // fresh draft:state snapshot flowing down through draftedPlayerIds is all
 // it takes for a newly-drafted player to disappear here — no local
-// "remove this row" logic exists. Milestone 4.4 is expected to add a Draft
-// action per row without restructuring this component: it would add an
-// onDraft-style prop here and a button per row, nothing more.
-export function AvailablePlayersPanel({ players, draftedPlayerIds }: AvailablePlayersPanelProps) {
+// "remove this row" logic exists.
+//
+// Milestone 4.4 adds the Draft action per row exactly as anticipated above:
+// canDraft/pendingPlayerId/onDraft are the only new props, and this
+// component still never touches the socket itself — DraftRoomClient remains
+// the sole owner of submission/connection state and just tells this panel
+// whether drafting is currently allowed and which row (if any) is pending.
+export function AvailablePlayersPanel({
+  players,
+  draftedPlayerIds,
+  canDraft,
+  pendingPlayerId,
+  onDraft,
+}: AvailablePlayersPanelProps) {
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState<PositionFilter>(ALL_POSITIONS_FILTER);
 
@@ -36,6 +50,12 @@ export function AvailablePlayersPanel({ players, draftedPlayerIds }: AvailablePl
     () => filterAvailablePlayers(players, draftedPlayerIds, search, position),
     [players, draftedPlayerIds, search, position],
   );
+
+  // Computed from the full, unfiltered `players` prop — never from
+  // visiblePlayers — so a player's displayed rank stays fixed regardless of
+  // search/position filtering. See computeAdpRanks's own comment for why a
+  // simple sequential counter over the already-sorted pool is sufficient.
+  const adpRanks = useMemo(() => computeAdpRanks(players), [players]);
 
   return (
     <section
@@ -76,7 +96,8 @@ export function AvailablePlayersPanel({ players, draftedPlayerIds }: AvailablePl
                 <th style={{ padding: "4px 8px" }}>Player</th>
                 <th style={{ padding: "4px 8px" }}>Pos</th>
                 <th style={{ padding: "4px 8px" }}>Team</th>
-                <th style={{ padding: "4px 8px" }}>ADP</th>
+                <th style={{ padding: "4px 8px" }}>ADP Rank</th>
+                <th style={{ padding: "4px 8px" }}></th>
               </tr>
             </thead>
             <tbody>
@@ -85,7 +106,12 @@ export function AvailablePlayersPanel({ players, draftedPlayerIds }: AvailablePl
                   <td style={{ padding: "4px 8px" }}>{player.fullName}</td>
                   <td style={{ padding: "4px 8px" }}>{player.position}</td>
                   <td style={{ padding: "4px 8px" }}>{player.nflTeam}</td>
-                  <td style={{ padding: "4px 8px" }}>{player.adp ?? "—"}</td>
+                  <td style={{ padding: "4px 8px" }}>{adpRanks.get(player.id) ?? "—"}</td>
+                  <td style={{ padding: "4px 8px" }}>
+                    <button type="button" disabled={!canDraft} onClick={() => onDraft(player.id)}>
+                      {pendingPlayerId === player.id ? "Drafting…" : "Draft"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

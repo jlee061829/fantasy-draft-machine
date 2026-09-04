@@ -17,6 +17,7 @@ import {
   getMsRemaining,
   isYourTurn,
 } from "./draft-room-helpers";
+import { canSubmitPick, mapPickErrorToMessage } from "./pick-submission-helpers";
 import { TurnBanner } from "./TurnBanner";
 
 const SOCKET_SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_SERVER_URL ?? "http://localhost:4000";
@@ -55,9 +56,32 @@ export function DraftRoomClient({
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [state, setState] = useState<DraftStateResult>(initialState);
   const [joinError, setJoinError] = useState<string | null>(null);
-  const [playerId, setPlayerId] = useState("");
+  const [pendingPlayerId, setPendingPlayerId] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
   const socketRef = useRef<DraftSocket | null>(null);
+  // Synchronous duplicate-emission guard: React state updates (pendingPlayerId)
+  // aren't guaranteed to be applied before a second rapid click handler runs,
+  // so this ref — mutated immediately, not through setState — is what
+  // actually prevents two draft:pick emits for one click burst. It always
+  // mirrors "is a pick request currently outstanding" and is cleared in
+  // lockstep with pendingPlayerId everywhere that clears it. This is a UX
+  // duplicate-emission guard only; it does not replace or weaken the
+  // server-side Draft-row lock (submitPick) that is the actual correctness
+  // boundary against concurrent picks.
+  const pickInFlightRef = useRef(false);
+
+  // The single place authoritative DraftStateResult snapshots are applied —
+  // used by both the draft:join ack and the draft:state broadcast listener
+  // below. A fresh authoritative snapshot always means whatever pick was
+  // pending has now been resolved one way or another (accepted and
+  // reflected here, or superseded/rejected and reflected here instead), so
+  // clearing pending/in-flight is bundled into every authoritative-state
+  // application rather than left to each success path to remember.
+  function applyAuthoritativeState(next: DraftStateResult) {
+    setState(next);
+    setPendingPlayerId(null);
+    pickInFlightRef.current = false;
+  }
 
   useEffect(() => {
     // auth is a function, not a static value: Socket.IO invokes it before
@@ -89,7 +113,7 @@ export function DraftRoomClient({
         }
         setStatus("connected");
         setJoinError(null);
-        setState(ack.state);
+        applyAuthoritativeState(ack.state);
       });
     });
 
@@ -105,6 +129,14 @@ export function DraftRoomClient({
     // drops ("ping timeout", "transport close", "transport error"), which
     // the Manager does keep retrying.
     socket.on("disconnect", (reason) => {
+      // Any disconnect invalidates an in-flight pick request: its ack (if
+      // any was ever going to arrive) can no longer be trusted to reflect
+      // this session, so pending/in-flight state is cleared unconditionally
+      // here rather than left stuck until reconnect. This never guesses at
+      // whether the pick succeeded — reconnect's fresh draft:join resync
+      // (via applyAuthoritativeState) is what determines the actual truth.
+      setPendingPlayerId(null);
+      pickInFlightRef.current = false;
       if (reason === "io client disconnect") return;
       setStatus(socket.active ? "reconnecting" : "error");
     });
@@ -159,7 +191,7 @@ export function DraftRoomClient({
     socket.io.on("reconnect_failed", onReconnectFailed);
 
     socket.on("draft:state", (nextState) => {
-      setState(nextState);
+      applyAuthoritativeState(nextState);
     });
 
     return () => {
@@ -191,18 +223,42 @@ export function DraftRoomClient({
   const yourTurn = isYourTurn(state, currentUserId);
   const msRemaining = getMsRemaining(turnDeadline, now);
   const draftedPlayerIds = useMemo(() => getDraftedPlayerIds(state), [state]);
+  const canDraft = canSubmitPick(phase, yourTurn, status, pendingPlayerId);
 
-  function handleSubmitPick(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPickError(null);
+  // Click -> draft:pick -> ack. The success ack ({ ok: true }) intentionally
+  // carries no state and does NOT itself clear pending/apply anything: it
+  // only means the request was accepted for processing, not that the room's
+  // authoritative state yet reflects it. Pending/in-flight stay set until
+  // the server's subsequent draft:state broadcast reaches
+  // applyAuthoritativeState above (this socket is already in the league
+  // room from draft:join, so it receives that broadcast itself). Only a
+  // rejection ack clears pending/in-flight directly, since a rejection is
+  // final and no further state change is coming for this request.
+  //
+  // Known residual edge (see CLAUDE.md Milestone 4.4 notes / handoff
+  // summary): if the server commits the pick, sends the success ack, and
+  // then its subsequent draft:state broadcast is somehow lost while the
+  // socket stays connected (no disconnect event fires), pending/in-flight
+  // would remain stuck with no further signal to clear them. This is not
+  // handled here (no timeout/forced-resync machinery) — deferred to
+  // Milestone 4.6 rather than complicating this flow for a failure mode
+  // that requires the broadcast step specifically, not just the commit, to
+  // fail on an otherwise-healthy connection.
+  function handleDraftPlayer(playerId: string) {
+    if (pickInFlightRef.current) return;
     const socket = socketRef.current;
-    if (!socket) return;
+    if (!socket || status !== "connected") return;
+
+    pickInFlightRef.current = true;
+    setPendingPlayerId(playerId);
+    setPickError(null);
+
     socket.emit("draft:pick", { leagueId, playerId }, (ack) => {
       if (!ack.ok) {
-        setPickError(ack.error);
-        return;
+        pickInFlightRef.current = false;
+        setPendingPlayerId(null);
+        setPickError(mapPickErrorToMessage(ack.error));
       }
-      setPlayerId("");
     });
   }
 
@@ -275,30 +331,15 @@ export function DraftRoomClient({
         </section>
       </div>
 
-      <AvailablePlayersPanel players={players} draftedPlayerIds={draftedPlayerIds} />
+      <AvailablePlayersPanel
+        players={players}
+        draftedPlayerIds={draftedPlayerIds}
+        canDraft={canDraft}
+        pendingPlayerId={pendingPlayerId}
+        onDraft={handleDraftPlayer}
+      />
 
-      <section
-        style={{
-          marginTop: 24,
-          padding: 12,
-          border: "1px dashed #d0d7de",
-          borderRadius: 6,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Debug: manual pick (temporary — replaced in Milestone 4.4)</h3>
-        <form onSubmit={handleSubmitPick}>
-          <label>
-            Player ID{" "}
-            <input
-              value={playerId}
-              onChange={(event) => setPlayerId(event.target.value)}
-              required
-            />
-          </label>{" "}
-          <button type="submit">Submit pick</button>
-        </form>
-        {pickError && <p style={{ color: "#cf222e" }}>Pick error: {pickError}</p>}
-      </section>
+      {pickError && <p style={{ color: "#cf222e", marginTop: 8 }}>{pickError}</p>}
     </main>
   );
 }
