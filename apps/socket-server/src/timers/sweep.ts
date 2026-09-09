@@ -1,6 +1,9 @@
 import {
   AutopickExhaustedError,
+  BotPickExhaustedError,
+  findActiveBotTurnLeagueIds,
   findExpiredActiveDraftLeagueIds,
+  processBotDraftTurn,
   processExpiredDraftTurn,
 } from "@fdm/database";
 import type { DraftServer } from "../types.js";
@@ -23,15 +26,34 @@ export interface TurnSweepOptions {
   intervalMs?: number;
 }
 
-// One sweep pass: find expired ACTIVE drafts, attempt to process each
-// independently (its own transaction/lock, per processExpiredDraftTurn),
-// and broadcast authoritative state only for a real autopick. A draft that
-// turns out to be a no-op by the time its transaction acquires the lock
-// (a manual pick, or another sweep pass, already consumed the turn) is
-// left alone — no broadcast, no error. Exported directly (not re-exported
-// through test-support.ts) so sweep.test.ts calls it deterministically
-// instead of waiting on the real scheduler.
+// One full sweep pass: the HUMAN timer-expiry phase, then the BOT-turn
+// phase (Phase 5.3). Both phases share this one recurring, self-rescheduling
+// timer — there is no second lifecycle, no second scheduler, and no
+// immediate recursive bot-chaining. Each phase is independently a
+// discover-then-process-each-independently loop, exactly like the
+// pre-Phase-5.3 human sweep was; the two phases are kept as separate
+// functions (not one function branching on participant type) so BOT and
+// HUMAN turn-consumption logic stay legible and independently testable,
+// even though they run back-to-back inside the same tick. Exported
+// directly (not re-exported through test-support.ts) so sweep.test.ts
+// calls it deterministically instead of waiting on the real scheduler.
 export async function runSweepOnce(io: DraftServer): Promise<void> {
+  await runHumanExpirySweep(io);
+  await runBotTurnSweep(io);
+}
+
+// Find expired ACTIVE drafts with a HUMAN current participant, attempt to
+// process each independently (its own transaction/lock, per
+// processExpiredDraftTurn), and broadcast authoritative state only for a
+// real autopick. A draft that turns out to be a no-op by the time its
+// transaction acquires the lock (a manual pick, another sweep pass, or a
+// same-tick BOT pick already consumed the turn) is left alone — no
+// broadcast, no error. This is the pre-Phase-5.3 sweep body, unchanged in
+// behavior except that findExpiredActiveDraftLeagueIds itself now excludes
+// BOT-current drafts at discovery time (a pure efficiency filter —
+// processExpiredDraftTurn's own post-lock participantType re-check remains
+// the authoritative guard regardless of what this discovery query saw).
+async function runHumanExpirySweep(io: DraftServer): Promise<void> {
   const leagueIds = await findExpiredActiveDraftLeagueIds();
 
   for (const leagueId of leagueIds) {
@@ -47,6 +69,48 @@ export async function runSweepOnce(io: DraftServer): Promise<void> {
         console.error(`Autopick exhausted for league ${leagueId}`, error);
       } else {
         console.error(`Unexpected error processing expired turn for league ${leagueId}`, error);
+      }
+      continue;
+    }
+
+    if (outcome.outcome === "picked") {
+      await broadcastDraftState(io, leagueId);
+    }
+  }
+}
+
+// Phase 5.3: find ACTIVE drafts with a BOT current participant — no
+// deadline condition at all, since a BOT's turnDeadline (identical in
+// shape to a HUMAN's; see applyPick) carries no special meaning for BOT
+// eligibility. A BOT is discovered and processed as soon as this phase
+// next runs, typically within one sweep interval of becoming current,
+// regardless of how far in the future its stored deadline is. Processes at
+// most one pick per league per tick — a BOT->BOT chain simply gets picked
+// up again on the next tick rather than being drained in a loop here, which
+// is an intentional correctness-first starting point: it bounds each tick's
+// work with no recursion/iteration-count logic, at the cost of consecutive
+// BOT turns progressing one pick per sweep interval (up to ~2000ms apart by
+// default) rather than instantly. A long all-BOT chain is expected to take
+// proportionally longer to fully resolve; this is an accepted latency
+// tradeoff, not a defect.
+async function runBotTurnSweep(io: DraftServer): Promise<void> {
+  const leagueIds = await findActiveBotTurnLeagueIds();
+
+  for (const leagueId of leagueIds) {
+    let outcome;
+    try {
+      outcome = await processBotDraftTurn(leagueId);
+    } catch (error) {
+      // BotPickExhaustedError mirrors AutopickExhaustedError: a genuine
+      // data/configuration invariant (the seeded rostered Player pool is
+      // smaller than teamCount * rosterSize), not a transient failure —
+      // logged and left for a later tick rather than crashing the sweep
+      // for every other league being processed. The affected Draft stays
+      // ACTIVE with the same BOT current participant.
+      if (error instanceof BotPickExhaustedError) {
+        console.error(`Bot pick exhausted for league ${leagueId}`, error);
+      } else {
+        console.error(`Unexpected error processing bot turn for league ${leagueId}`, error);
       }
       continue;
     }

@@ -14,17 +14,30 @@ export type AutopickOutcome =
   | {
       outcome: "skipped";
       leagueId: string;
-      reason: "NO_DRAFT" | "NOT_ACTIVE" | "ALREADY_ADVANCED";
+      reason: "NO_DRAFT" | "NOT_ACTIVE" | "ALREADY_ADVANCED" | "CURRENT_PARTICIPANT_IS_BOT";
     };
 
 // Plain, unlocked read used only to build the sweep's candidate list. Its
 // staleness is expected and safe: processExpiredDraftTurn re-validates
-// expiry under the same Draft-row lock submitPick uses, so a leagueId that
-// no longer qualifies by the time it's processed just resolves to a
-// "skipped" outcome instead of corrupting anything.
+// expiry (and, as of Phase 5.3, participant type) under the same Draft-row
+// lock submitPick uses, so a leagueId that no longer qualifies by the time
+// it's processed just resolves to a "skipped" outcome instead of
+// corrupting anything.
+//
+// Phase 5.3: filters to a HUMAN currentMember as a discovery-time
+// efficiency filter only — it narrows the candidate list so the human path
+// doesn't waste a lock+read cycle on drafts already known (at discovery
+// time) to be BOT-current. It is NOT the authoritative BOT/HUMAN check:
+// participant identity can still change between this unlocked read and the
+// transaction acquiring the lock, so processExpiredDraftTurn re-verifies
+// participantType itself, post-lock, regardless of what this query saw.
 export async function findExpiredActiveDraftLeagueIds(): Promise<string[]> {
   const drafts = await prisma.draft.findMany({
-    where: { status: "ACTIVE", turnDeadline: { lte: new Date() } },
+    where: {
+      status: "ACTIVE",
+      turnDeadline: { lte: new Date() },
+      currentMember: { participantType: "HUMAN" },
+    },
     select: { leagueId: true },
   });
   return drafts.map((draft) => draft.leagueId);
@@ -43,16 +56,23 @@ export async function findExpiredActiveDraftLeagueIds(): Promise<string[]> {
 //      manual pick consumed the turn and issued a new deadline between
 //      discovery and this transaction acquiring the lock) a safe no-op
 //      instead of a duplicate/incorrect autopick
-//   3. read League config plainly (unlocked) — safe for the same reason
+//   3. (Phase 5.3) re-read the current LeagueMember's participantType and
+//      require HUMAN — this is the *authoritative* BOT/HUMAN check.
+//      findExpiredActiveDraftLeagueIds' HUMAN filter is discovery-time only;
+//      participant identity can still change between that unlocked read and
+//      this transaction acquiring the lock (e.g. a same-tick BOT pick, or a
+//      future reassignment), so this function never trusts the discovery
+//      query alone
+//   4. read League config plainly (unlocked) — safe for the same reason
 //      submitPick's League read is: settings/reorder mutations already
 //      return 409 once a Draft exists
-//   4. select the best available player (selectBestAvailablePlayerId, the
+//   5. select the best available player (selectBestAvailablePlayerId, the
 //      shared Phase 5.2 selection primitive — see player-selection.ts)
-//   5. delegate to the same applyPick used by submitPick, with
+//   6. delegate to the same applyPick used by submitPick, with
 //      wasAutopick: true — identical Pick-insert/completion/advance logic,
 //      so SNAKE/LINEAR progression and turnDeadline math can never drift
 //      between manual and automatic picks
-//   6. commit
+//   7. commit
 export async function processExpiredDraftTurn(leagueId: string): Promise<AutopickOutcome> {
   return prisma.$transaction(async (tx) => {
     const draft = await lockDraftForLeague(tx, leagueId);
@@ -62,6 +82,15 @@ export async function processExpiredDraftTurn(leagueId: string): Promise<Autopic
     if (draft.status !== "ACTIVE" || draft.currentMemberId === null) {
       return { outcome: "skipped", leagueId, reason: "NOT_ACTIVE" };
     }
+
+    const currentMember = await tx.leagueMember.findUniqueOrThrow({
+      where: { id: draft.currentMemberId },
+      select: { participantType: true },
+    });
+    if (currentMember.participantType !== "HUMAN") {
+      return { outcome: "skipped", leagueId, reason: "CURRENT_PARTICIPANT_IS_BOT" };
+    }
+
     if (!draft.turnDeadline || draft.turnDeadline.getTime() > Date.now()) {
       return { outcome: "skipped", leagueId, reason: "ALREADY_ADVANCED" };
     }

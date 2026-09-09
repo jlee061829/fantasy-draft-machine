@@ -23,6 +23,12 @@ export { processExpiredDraftTurn, findExpiredActiveDraftLeagueIds } from "./draf
 // public entry point) call the same ranking logic human timer-autopick
 // already uses, without a second boundary change when that work starts.
 export { selectBestAvailablePlayerId } from "./drafts/player-selection.js";
+// processBotDraftTurn (Phase 5.3) is the BOT counterpart to
+// processExpiredDraftTurn above, following the exact same public/internal
+// split: lockDraftForLeague/applyPick stay unreachable from outside this
+// package, while the safe, high-level orchestration entry point is public.
+export type { BotTurnOutcome } from "./drafts/bot-turn.js";
+export { processBotDraftTurn, findActiveBotTurnLeagueIds } from "./drafts/bot-turn.js";
 export * from "./drafts/get-draft-state.js";
 export * from "./leagues/errors.js";
 export * from "./auth/socket-ticket.js";

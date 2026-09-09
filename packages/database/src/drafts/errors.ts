@@ -118,3 +118,25 @@ export class AutopickExhaustedError extends Error {
     this.name = "AutopickExhaustedError";
   }
 }
+
+// Thrown by processBotDraftTurn (Phase 5.3) when selectBestAvailablePlayerId
+// returns null for a BOT's turn — the same underlying condition
+// AutopickExhaustedError represents (the seeded rostered Player pool is
+// smaller than teamCount * rosterSize), kept as a distinct class rather than
+// reusing AutopickExhaustedError so a caller (today: apps/socket-server's
+// bot sweep) can log/handle "a BOT's pool is exhausted" separately from "a
+// HUMAN's timer-autopick pool is exhausted" if that distinction is ever
+// useful, at no cost while the two cases are handled identically. Like
+// AutopickExhaustedError, this is an internal data/configuration invariant
+// failure, not a normal client-triggerable conflict: it is left to
+// propagate out of the transaction (rolling it back completely — no Pick
+// written, no Draft state advanced) rather than being mapped to a 4xx/socket
+// error code. The affected Draft remains ACTIVE with the same BOT current
+// participant, retried identically on every subsequent sweep tick until the
+// underlying seed/roster-size mismatch is corrected.
+export class BotPickExhaustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BotPickExhaustedError";
+  }
+}

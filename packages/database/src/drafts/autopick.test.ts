@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { getPickerForPickNumber } from "@fdm/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../client.js";
-import { cleanupLeagueTestData, createTestPlayer, createTestUser } from "../test-support/db.js";
+import {
+  cleanupLeagueTestData,
+  createTestBotMember,
+  createTestPlayer,
+  createTestUser,
+} from "../test-support/db.js";
 import type { ScoringFormat } from "../generated/prisma/client.js";
 import { findExpiredActiveDraftLeagueIds, processExpiredDraftTurn } from "./autopick.js";
 import { AutopickExhaustedError } from "./errors.js";
@@ -80,6 +85,28 @@ async function startFullDraft(overrides: LeagueOverrides = {}) {
   });
 
   return { league, owner, membersBySlot, membershipsBySlot, userIdByMembershipId, draft };
+}
+
+// Phase 5.3: a minimal ACTIVE draft whose current participant is a BOT, for
+// exercising processExpiredDraftTurn's/findExpiredActiveDraftLeagueIds'
+// HUMAN-only guard/filter. Deliberately a single-BOT fixture — these tests
+// only need "current participant is a BOT," not a fully-filled league.
+async function startDraftWithBotCurrent(overrides: LeagueOverrides = {}) {
+  const owner = await createTestUser();
+  const league = await createTestLeague(owner.id, overrides);
+  const bot = await createTestBotMember(league.id, 1);
+
+  const draft = await prisma.draft.create({
+    data: {
+      leagueId: league.id,
+      status: "ACTIVE",
+      currentPickNumber: 1,
+      currentMemberId: bot.id,
+      turnDeadline: overrides.turnDeadline ?? new Date(Date.now() - 1_000),
+    },
+  });
+
+  return { league, bot, draft };
 }
 
 // Defaults to a rostered player (nflTeam set) since that's the eligible
@@ -334,6 +361,29 @@ describe("processExpiredDraftTurn", () => {
       );
     });
   });
+
+  // Phase 5.3: processExpiredDraftTurn must never autopick for a BOT, even
+  // if its (schema-identical, no-special-meaning) turnDeadline has expired.
+  // This is the *authoritative* guard — it must hold regardless of what
+  // findExpiredActiveDraftLeagueIds' own discovery-time filter saw, so this
+  // test calls processExpiredDraftTurn directly rather than going through
+  // discovery, proving the guard doesn't merely rely on never being called
+  // for a BOT-current league.
+  describe("BOT participant guard", () => {
+    it("skips an expired turn whose current participant is a BOT, writing no Pick", async () => {
+      const { draft } = await startDraftWithBotCurrent();
+
+      const outcome = await processExpiredDraftTurn(draft.leagueId);
+
+      expect(outcome).toEqual({
+        outcome: "skipped",
+        leagueId: draft.leagueId,
+        reason: "CURRENT_PARTICIPANT_IS_BOT",
+      });
+      const pickCount = await prisma.pick.count({ where: { draftId: draft.id } });
+      expect(pickCount).toBe(0);
+    });
+  });
 });
 
 describe("findExpiredActiveDraftLeagueIds", () => {
@@ -359,5 +409,13 @@ describe("findExpiredActiveDraftLeagueIds", () => {
     expect(ids).toContain(expiredLeague.id);
     expect(ids).not.toContain(futureLeague.id);
     expect(ids).not.toContain(draftlessLeague.id);
+  });
+
+  it("excludes an ACTIVE draft whose current participant is a BOT, even past its deadline", async () => {
+    const { draft } = await startDraftWithBotCurrent();
+
+    const ids = await findExpiredActiveDraftLeagueIds();
+
+    expect(ids).not.toContain(draft.leagueId);
   });
 });

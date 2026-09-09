@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { prisma } from "@fdm/database";
-import { createTestPlayer, createTestUser } from "@fdm/database/test-support";
+import { createTestBotMember, createTestPlayer, createTestUser } from "@fdm/database/test-support";
 import type { ClientToServerEvents, ServerToClientEvents } from "@fdm/shared";
 import { io as ioClient, type Socket as ClientSocketType } from "socket.io-client";
 import type { DraftJoinAck, DraftJoinPayload, DraftPickAck, DraftPickPayload } from "@fdm/shared";
 import { createSocketServer, type SocketServerHandle } from "./server.js";
 
-export { createTestPlayer, createTestUser };
+export { createTestBotMember, createTestPlayer, createTestUser };
 
 export type TestClientSocket = ClientSocketType<ServerToClientEvents, ClientToServerEvents>;
 
@@ -90,6 +90,42 @@ export async function startFullDraft(overrides: LeagueOverrides = {}) {
   });
 
   return { league, owner, membersBySlot, membershipsBySlot, draft };
+}
+
+// Phase 5.3: a fully-filled ACTIVE draft with a BOT at slot 1 (currently on
+// the clock) and HUMANs filling the remaining slots — enough to exercise
+// BOT turn discovery/processing and BOT->HUMAN progression through the real
+// socket-server sweep. No SocketTicket/socket identity is ever created for
+// the BOT; membersBySlot only covers the HUMAN slots, since minting a
+// ticket or connecting a socket "as" a bot is never a legitimate operation.
+export async function startFullDraftWithBotOnClock(overrides: LeagueOverrides = {}) {
+  const teamCount = overrides.teamCount ?? 4;
+  const league = await createTestLeague((await createTestUser()).id, overrides);
+  const botMembership = await createTestBotMember(league.id, 1);
+
+  const others = await Promise.all(Array.from({ length: teamCount - 1 }, () => createTestUser()));
+  const otherMemberships = await Promise.all(
+    others.map((user, i) => addMember(league.id, user.id, i + 2)),
+  );
+
+  const membersBySlot: Record<number, string> = {};
+  const membershipsBySlot: Record<number, string> = { 1: botMembership.id };
+  others.forEach((user, i) => {
+    membersBySlot[i + 2] = user.id;
+    membershipsBySlot[i + 2] = otherMemberships[i]!.id;
+  });
+
+  const draft = await prisma.draft.create({
+    data: {
+      leagueId: league.id,
+      status: "ACTIVE",
+      currentPickNumber: 1,
+      currentMemberId: botMembership.id,
+      turnDeadline: new Date(Date.now() + (overrides.timerSeconds ?? 60) * 1000),
+    },
+  });
+
+  return { league, botMembership, membersBySlot, membershipsBySlot, draft };
 }
 
 export async function startTestServer(): Promise<{
