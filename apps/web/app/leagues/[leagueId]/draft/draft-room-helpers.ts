@@ -1,4 +1,5 @@
 import type { DraftStateResult } from "@fdm/shared";
+import { getRoundForPick } from "./draft-board-helpers";
 
 // Pure, DOM-free presentation logic for the draft-room shell (Milestone 4.2).
 // Every function here derives a display value from the authoritative
@@ -67,4 +68,36 @@ export function formatCountdown(msRemaining: number): string {
 // or resync) is reflected automatically the next time this is called.
 export function getDraftedPlayerIds(state: DraftStateResult): Set<string> {
   return new Set(state.picks.map((pick) => pick.playerId));
+}
+
+export interface RoundInfo {
+  round: number;
+  totalRounds: number;
+  pickNumber: number;
+}
+
+// Milestone 4.6: derived round/pick context for TurnBanner ("Round 4 of 15 ·
+// Pick 39 overall"). null whenever there's no in-progress pick to describe
+// (no Draft yet, or COMPLETE) — mirrors getDraftPhase's own "anything
+// non-COMPLETE and non-null counts as in-progress" defensive treatment
+// rather than requiring status === "ACTIVE" literally.
+export function getRoundInfo(state: DraftStateResult): RoundInfo | null {
+  const draft = state.draft;
+  if (!draft || draft.status === "COMPLETE") return null;
+  return {
+    round: getRoundForPick(draft.currentPickNumber, state.league.teamCount),
+    totalRounds: state.league.rosterSize,
+    pickNumber: draft.currentPickNumber,
+  };
+}
+
+export type CountdownUrgency = "normal" | "warning" | "critical";
+
+// Presentation only — never changes what formatCountdown displays (still
+// floors/clamps at 0 exactly as before), only how it's colored. Thresholds
+// are arbitrary but ordered so "critical" always includes 0.
+export function getCountdownUrgency(msRemaining: number): CountdownUrgency {
+  if (msRemaining <= 5_000) return "critical";
+  if (msRemaining <= 15_000) return "warning";
+  return "normal";
 }

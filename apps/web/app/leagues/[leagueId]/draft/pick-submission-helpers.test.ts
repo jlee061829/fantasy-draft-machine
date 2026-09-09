@@ -1,7 +1,7 @@
-import type { SocketErrorCode } from "@fdm/shared";
+import type { DraftPickAck, SocketErrorCode } from "@fdm/shared";
 import { describe, expect, it } from "vitest";
 import type { ConnectionStatus } from "./ConnectionStatusBadge";
-import { canSubmitPick, mapPickErrorToMessage } from "./pick-submission-helpers";
+import { canSubmitPick, getPickAckAction, mapPickErrorToMessage } from "./pick-submission-helpers";
 
 // Pure-function unit tests, no Postgres and no DOM: these exercise only the
 // client-side submission-gating/error-presentation logic layered on top of
@@ -62,4 +62,33 @@ describe("mapPickErrorToMessage", () => {
     const allCodes: SocketErrorCode[] = cases.map(([code]) => code);
     expect(new Set(allCodes).size).toBe(allCodes.length);
   });
+});
+
+describe("getPickAckAction", () => {
+  it("returns a resync action for a successful ack", () => {
+    const ack: DraftPickAck = { ok: true };
+    expect(getPickAckAction(ack)).toEqual({ type: "resync" });
+  });
+
+  const errorCodes: SocketErrorCode[] = [
+    "NOT_ON_THE_CLOCK",
+    "PLAYER_ALREADY_DRAFTED",
+    "DRAFT_NOT_ACTIVE",
+    "DRAFT_NOT_FOUND",
+    "PLAYER_NOT_FOUND",
+    "LEAGUE_NOT_ACCESSIBLE",
+    "NOT_JOINED",
+    "INVALID_PAYLOAD",
+    "INTERNAL_ERROR",
+  ];
+
+  for (const code of errorCodes) {
+    it(`maps a rejected ack (${code}) to an error action with the matching message`, () => {
+      const ack: DraftPickAck = { ok: false, error: code };
+      expect(getPickAckAction(ack)).toEqual({
+        type: "error",
+        message: mapPickErrorToMessage(code),
+      });
+    });
+  }
 });

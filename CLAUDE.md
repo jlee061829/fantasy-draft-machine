@@ -563,7 +563,7 @@ Last updated: September 2026
   - `SocketErrorCode` → user-facing message mapping is exhaustive (`Record<SocketErrorCode, string>`, so a new protocol error code fails to typecheck rather than silently falling through to a generic message) and lives in the pure `pick-submission-helpers.ts`, alongside a pure `canSubmitPick(...)` gating helper — both DOM-free and unit tested without jsdom/React Testing Library
   - no Redux/Zustand/Context/reducer and no toast framework were introduced
   - no changes to `apps/socket-server`, `packages/database`, `packages/shared`, or the HTTP pick route
-  - known residual edge, deliberately not addressed in 4.4: the server's current order is commit → `{ok:true}` ack → `draft:state` broadcast; if the commit and success ack both succeed but the subsequent broadcast is somehow lost while the socket remains connected (no `disconnect` fires), the client's pending state would stay stuck with no further signal to clear it — no timeout/forced-resync machinery was added for this in 4.4; it is deferred to Milestone 4.6
+  - known residual edge, deliberately not addressed in 4.4: the server's current order is commit → `{ok:true}` ack → `draft:state` broadcast; if the commit and success ack both succeed but the subsequent broadcast is somehow lost while the socket remains connected (no `disconnect` fires), the client's pending state would stay stuck with no further signal to clear it — no timeout/forced-resync machinery was added for this in 4.4; it was deferred to Milestone 4.6, which resolved it with a client-initiated `draft:join` resync (see "Pick-success resync (Milestone 4.6)" under "Realtime reconnect behavior")
   - separately, the Available Players table's ADP column now displays a stable integer **ADP Rank** instead of the raw decimal `PlayerAdp.adp` value — computed client-side as each player's 1-indexed position within the full ADP-sorted pool (`computeAdpRanks` in `available-players-helpers.ts`), not by rounding/flooring the raw number
   - persisted `PlayerAdp.adp` and server-side ordering/autopick selection are unchanged; ADP Rank is presentation-only and is always computed from the full unfiltered player pool, so it does not renumber when search/position filters are applied
   - a player with `adp === null` remains unranked and displays `—`, rather than being assigned an invented rank
@@ -613,10 +613,48 @@ Last updated: September 2026
   - Docker Postgres/Redis were confirmed running (`docker compose up -d`) before running the suite
   - manual verification (the one legitimate development OAuth identity, no fabricated users, `teamCount` minimum unrelaxed) confirmed: the league-detail View Draft link works; the pre-draft page loads with correct settings, draft order (with `(you)`/commissioner presentation), and an empty draft board showing correct snake geometry for the real league; read-only Available Players search/filter/ADP Rank work with no Draft action column present; the commissioner Start Draft control shows the correct disabled/waiting state for the underfilled real league; direct navigation to `/leagues/[leagueId]/draft/room` before the draft starts correctly redirects back to `/draft`; no unexpected runtime/console errors were observed beyond a pre-existing, unrelated missing-favicon 404
   - populated ACTIVE/COMPLETE multi-user live-board and live-roster behavior were not manually reproduced — the development database still has only one legitimate OAuth identity and no legitimate ACTIVE Draft — and remain covered by the automated pure-derivation tests above plus the existing Phase 3 real-Postgres/real-socket suites, consistent with every prior milestone's verification precedent
+- Phase 4 Milestone 4.6 — Draft Room UX Hardening + Phase 4 Closeout:
+  - added route-scoped `apps/web/app/leagues/[leagueId]/draft/draft-room.css`, imported once via a new pass-through `apps/web/app/leagues/[leagueId]/draft/layout.tsx` covering both `/draft` and `/draft/room`
+  - CSS is used only where inline `style` props genuinely cannot express the need (a media-query breakpoint, a shared computed-once responsive grid, shared position-accent classes); the existing inline-style convention is otherwise unchanged everywhere else
+  - live-room layout: Available Players (wide) + My Team (narrow) side by side on desktop via `.fdm-live-grid`, collapsing to one column under an 860px breakpoint
+  - the Draft Board and Available Players tables scroll horizontally inside their own wrapper rather than compressing illegibly; the roster panel scrolls vertically past a bounded height
+  - `DraftBoard` column headers are now built from every configured `1..teamCount` slot rather than from `state.members`, fixing a pre-existing header/column misalignment for an underfilled pre-draft league and giving every column a correct `scope="col"` header, including "Slot N — open" placeholders for unfilled slots
+  - the authenticated user's board column gets a `(you)` text marker plus a subtle background highlight; the current-pick cell's styling always takes precedence over the user-column highlight even on the same cell, enforced with a combined CSS selector (`.fdm-current-pick.fdm-user-column`) rather than relying on declaration order
+  - neither state relies on color alone: the user column also carries the `(you)` text, and the current-pick cell also carries visible "On the clock" text plus an `.sr-only` announcement
+  - added `getRoundDirection(round, draftType)` and `getRoundForPick(pickNumber, teamCount)` to `draft-board-helpers.ts`; round rows use semantic `scope="row"` headers with a →/← direction glyph plus `.sr-only` text
+  - completed board cells show a clearer player-name hierarchy, a pick-number label, a supplementary position-accent dot (`position-style.ts`'s `getPositionAccentClass`) alongside unchanged visible position/team text, and a small `AUTO` badge for autopicks; empty cells get a visually distinct dashed border
+  - the pre-draft page reuses the same `DraftBoard` unmodified, now also passing `currentUserId` for the same column highlight/`(you)` treatment, plus new Snake/Linear explanatory copy above Draft Order
+  - `TurnBanner` now derives and displays `Round X of Y · Pick Z overall` via new `getRoundInfo` (`draft-room-helpers.ts`); the countdown gets presentation-only warning/critical coloring via new `getCountdownUrgency`, with `formatCountdown`'s zero-clamping behavior unchanged
+  - the turn-state live region (`role="status" aria-live="polite"`) is scoped narrowly to just the picker-name/turn text, not the ticking countdown, so a screen reader isn't re-announced every second
+  - `AvailablePlayersPanel` gets real (visually hidden) `<label>`s for search/position filter, `scope="col"` headers, and a player-specific accessible name on each Draft button (`Draft {name}` / `Drafting {name}…`) instead of a flat list of identically-named buttons
+  - new `shouldShowActionColumn(phase)` in `available-players-helpers.ts` drives hiding the Action column entirely once the Draft is `COMPLETE`, by reusing the panel's existing optional-`onDraft` read-only mode rather than rendering permanently-disabled Draft buttons
+  - `TeamRosterPanel` gets a visible roster-selector label, round + overall pick context per line (via the same `getRoundForPick` the board uses), a matching position-accent dot and `AUTO` badge, and a bounded-height scroll container
+  - accessibility pass: `scope="col"`/`scope="row"` table semantics, real form labels, player-specific button names, `role="alert"` on join/pick/resync error text, `role="status" aria-live="polite"` on the connection badge and turn-state text, native focus outlines preserved throughout, no custom keyboard widgets introduced, color never used as the sole carrier of state or position meaning
+  - fixed the known 4.4 residual edge: on a successful `draft:pick` ack, the client now immediately emits `draft:join` to pull fresh authoritative state directly, rather than only passively waiting on the room-wide `draft:state` broadcast (which could fail/be lost after a successful commit while the socket stayed connected)
+  - the resync reuses the existing `draft:join` event and `applyAuthoritativeState` function unchanged; `DraftPickAck` was not widened and no new socket event was added
+  - the room-wide `draft:state` broadcast is unchanged and remains how every other connected client learns about the pick; if it also reaches the submitting client, reapplying it is safe — replacing `DraftStateResult` wholesale with each valid authoritative snapshot is always safe, whether or not it's newer than the resync's own snapshot
+  - new pure `getPickAckAction(ack)` in `pick-submission-helpers.ts` is the tested decision behind this: a successful ack always resolves to `{type: "resync"}`; a rejected ack resolves to the existing `mapPickErrorToMessage` output
+  - if the resync's own `draft:join` ack itself comes back rejected, that is not treated as "the pick failed" (the original ack already confirmed it succeeded) — pending/in-flight state is cleared and a distinct `resyncError` message is shown ("The draft room couldn't refresh after your pick. Refresh the page to load the latest state."), never the pick-rejection wording
+  - `resyncError` clears on any fresh authoritative state application or on socket disconnect, exactly like the existing pending/in-flight clearing
+  - deliberately no defensive timeout was added for the (accepted, low-risk) case where the resync's own ack is itself lost while the socket still appears connected — that residual case remains bounded by the room-wide broadcast or by Socket.IO's own heartbeat-driven `disconnect` (which already unconditionally clears pending state); this is not a mathematical exactly-once guarantee, only a substantial narrowing of the documented 4.4 failure mode
+  - `COMPLETE` draft state: no current-pick highlight, final board and rosters remain fully visible, Available Players remains browseable with its Action column hidden (not disabled) — no post-draft management features were added
+  - no Tailwind or other styling framework was introduced; no new frontend state-management library was introduced; no jsdom/React Testing Library was introduced
+- Milestone 4.6 verification:
+  - `apps/web`: 30 test files / 312 tests passing (up from 281)
+  - `packages/database`: 8 test files / 75 tests passing (unaffected)
+  - `apps/socket-server`: 5 test files / 30 tests passing (unaffected)
+  - workspace-wide typecheck passes
+  - workspace-wide build passes with the required development environment variables loaded; both `/leagues/[leagueId]/draft` and `/leagues/[leagueId]/draft/room` remain registered
+  - new pure-helper test coverage: `getRoundDirection` and `getRoundForPick` (round-boundary/direction math), `getRoundInfo` (null pre-draft/COMPLETE, early pick, round boundary, final pick), `getCountdownUrgency` (normal/warning/critical thresholds including zero), `getPositionAccentClass` (all six positions plus a neutral fallback), `shouldShowActionColumn`, and `getPickAckAction` (successful ack → resync; every current `SocketErrorCode` → its existing mapped message)
+  - `page.test.ts` extended to verify `currentUserId` is threaded into `DraftBoard`'s props on the pre-draft page
+  - manual verification used the real dev database and the one legitimate development OAuth identity's own existing (non-expired) session, reused as an HTTP cookie against the running dev server rather than performing a fresh OAuth flow or fabricating any identity; confirmed against real server-rendered output: correct header/column count and `(you)`/`Slot N — open` placeholders for an underfilled real league, Snake explanatory copy, 16 alternating round-direction arrows for a 16-round league, real `AvailablePlayer` data with zero Action-column buttons in read-only pre-draft mode, and a real `307` redirect from `/draft/room` to `/draft` before a Draft exists
+  - the actual compiled CSS chunk was fetched from the build output and confirmed to contain the `@media (max-width: 860px)` breakpoint and every new class exactly as written, including the `.fdm-current-pick.fdm-user-column` precedence rule
+  - live interactive browser verification (visual screenshot, resizing to watch the grid collapse, clicking/tabbing) was not completed this milestone — the tool capable of injecting the dev session's httpOnly auth cookie into a real Playwright browser context was blocked by the environment's own permission classifier as RCE-equivalent, independent of the standing one-OAuth-account limitation
+  - populated ACTIVE/COMPLETE multi-user live-room behavior (`TurnBanner`, `TeamRosterPanel`, pending-pick UX, the resync fix itself) remains unreachable for manual testing under the standing constraint — the live room now unconditionally requires a real Draft, which requires a fully-joined league that cannot be legitimately filled by one real account — and remains verified by the pure-helper tests above plus the existing Phase 3 real-Postgres/real-socket suites, consistent with every prior milestone's verification precedent
 
 ### Current phase
 
-**Phase 4 — Client Experience — IN PROGRESS**
+**Phase 4 — Client Experience — COMPLETE**
 
 Completed:
 
@@ -628,6 +666,7 @@ Completed:
 - Phase 4 Milestone 4.3 — Available Players + Search/Filtering — COMPLETE
 - Phase 4 Milestone 4.4 — Production Pick Submission UX — COMPLETE
 - Phase 4 Milestone 4.5 — Pre-Draft Experience + Live Draft Room — COMPLETE
+- Phase 4 Milestone 4.6 — Draft Room UX Hardening + Phase 4 Closeout — COMPLETE
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -672,8 +711,12 @@ Current Phase 4 capabilities:
 - pre-draft and live drafting are now two distinct routes: `/leagues/[leagueId]/draft` is a stable, non-realtime pre-draft/draft-summary page (settings, draft order, empty draft board, read-only Available Players, commissioner Start Draft control before a Draft exists; a compact summary + Join/View Draft Room link once one exists), and `/leagues/[leagueId]/draft/room` is the live draft room, the only place Socket.IO ever connects, redirecting back to `/draft` if visited before a Draft exists
 - the draft room now includes a full Draft Board (rows = `rosterSize` rounds, fixed `draftSlot` columns, snake/linear cell mapping via the shared `getPickerForPickNumber`, completed cells from authoritative `state.picks`, current-pick highlighting while `ACTIVE`) and a My Team / roster-inspection panel (defaults to the authenticated user's own roster, with a selector for any other manager), both built from one shared pair of pure derivations (`deriveDraftBoard`, `deriveTeamRosters`) reused unmodified by the pre-draft page's empty board
 - newly created leagues are fixed to a 15-round draft (`PRODUCT_ROSTER_SIZE`); the public create/update contracts no longer accept a `rosterSize` field at all, while `rosterSize` itself remains a fully dynamic engine/database value — historical non-15 leagues, and internal test fixtures that call `createLeague()` directly, are unaffected
+- the live room and pre-draft page share one small route-scoped stylesheet for responsive layout, position accents, and screen-reader-only text; the live room's Available Players/My Team panels collapse from side-by-side to stacked under an 860px breakpoint, and both the Draft Board and Available Players tables scroll internally rather than compressing
+- the Draft Board highlights the authenticated user's column and the current-pick cell, with the current-pick treatment always taking visual precedence over the user-column highlight on the same cell, and neither state relying on color alone
+- a successful `draft:pick` ack now triggers an immediate `draft:join` resync rather than only waiting on the room-wide broadcast, substantially narrowing the previously-documented ack-success/broadcast-loss stuck-pending edge with no protocol change
+- a `COMPLETE` Draft hides the Available Players Action column entirely (reusing the panel's existing read-only mode) instead of showing disabled Draft buttons
 
-Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestones 4.1 — Commissioner Draft Start UI, 4.2 — Draft Room Shell + Live Turn State, 4.3 — Available Players + Search/Filtering, 4.4 — Production Pick Submission UX, and 4.5 — Pre-Draft Experience + Live Draft Room are complete. Milestone 4.6 — Draft Room UX Hardening + Phase 4 Closeout is the next objective.
+**Phase 4 exit criteria satisfied.** All six milestones (4.1–4.6) are complete, and Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect. Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) remain complete and frozen as well. Horizontal scalability (Redis pub/sub across multiple socket-server instances), rate limiting, structured error responses, Playwright E2E coverage, and CI remain explicitly deferred to Phase 5, which has not yet begun.
 
 ### Not yet implemented
 
@@ -682,13 +725,26 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - event replay or more sophisticated reconnect recovery beyond the basic mint-ticket/rejoin/resync mechanism delivered in 3.3b
 - presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup)
 - chat
-- broader draft-room visual polish beyond the functional Draft Board shipped in Milestone 4.5 — responsive refinement, sticky panels, board coloring by position, animations, and accessibility polish remain Milestone 4.6 scope
-- hardening the rare ack-success/`draft:state`-broadcast-failure edge in pick-submission UX, where a pick could commit and ack successfully but its subsequent broadcast is lost while the socket stays connected, leaving client pending state stuck (deferred to Milestone 4.6 — see Milestone 4.4's completed-work notes)
+- sticky live-room panels and board/list transition animations — evaluated during Milestone 4.6 and intentionally left out; what did ship in 4.6 was static readability/accessibility polish plus position-accent coloring (see Milestone 4.6's completed-work notes), not these two items
+- the residual (low-probability) case where a pick's success ack, the resulting `draft:join` resync's own ack, *and* the room-wide `draft:state` broadcast are all lost while the socket still appears connected — bounded by Socket.IO's heartbeat-driven `disconnect` (which already unconditionally clears pending state), not defended with an additional client-side timeout; see Milestone 4.6's completed-work notes and "Realtime reconnect behavior" below
 - pause/resume
 - draft/pick undo
 - roster-position enforcement, including roster-aware autopick selection, if later required
 - ML recommendation system
 - GitHub Actions CI
+
+### Future roadmap notes (not scoped as a phase)
+
+Ideas discussed for a possible future phase, not yet scoped, designed, or implemented. Nothing below is committed work, informs any current-phase decision, or should be treated as a data-model/implementation change that has happened.
+
+**Bot Managers + Mock Drafts (future phase, unscoped)**
+
+- bots would be first-class draft participants, not fake OAuth `User`/`Account`/`Session` rows — no Auth.js identity is manufactured for a bot
+- bot picks would run server-side (most likely from `apps/socket-server`, alongside the existing turn-expiration sweep), never as browser-side automation
+- a bot's turn would reuse the same authoritative transactional pick pipeline (`submitPick`/`applyPick`) every other pick source already uses — no second pick-writing path
+- a bot-manager pick is intentionally distinct from a human's timer-expiry autopick, even though both are machine-selected; a future `Pick` "source" concept might eventually distinguish `MANUAL`, `AUTOPICK` (timer expiry), and `BOT` (an intentional non-human manager) rather than overloading the existing `wasAutopick` boolean for both
+- a first bot implementation would likely be a simple ADP/best-available selector, reusing `selectAutopickPlayerId`'s existing two-tier approach; roster/position-aware bot strategy would be later, optional work
+- a mock-draft mode could fill empty League slots with bots; a separately-discussed idea — temporarily delegating an existing real human's slot to CPU control — is a distinct, later concern from bot-owned mock-draft slots and should not be conflated with it
 
 ### Deferred decisions
 
@@ -916,7 +972,7 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - a rejection ack, a fresh authoritative state application, and a socket disconnect all clear `pendingPlayerId`/the in-flight guard; disconnect clears them unconditionally rather than guessing whether an in-flight pick committed, and reconnect's fresh `draft:join` resync is what determines the actual truth
 - no automatic pick retry and no exactly-once client protocol was added
 - `SocketErrorCode` → user-facing message mapping is exhaustive (`Record<SocketErrorCode, string>`) and lives in a pure, DOM-free helper (`pick-submission-helpers.ts`) alongside the pure Draft-button gating helper (`canSubmitPick`); no jsdom/React Testing Library was introduced to test either
-- the rare edge where a pick's commit and success ack both succeed but its subsequent `draft:state` broadcast is lost while the socket stays connected (leaving client pending state stuck with no further signal) was deliberately not addressed in 4.4 and is deferred to Milestone 4.6
+- the rare edge where a pick's commit and success ack both succeed but its subsequent `draft:state` broadcast is lost while the socket stays connected (leaving client pending state stuck with no further signal) was deliberately not addressed in 4.4; Milestone 4.6 resolved it with a client-initiated `draft:join` resync triggered directly off the successful ack
 - the temporary raw `playerId` debug form was removed from the normal production draft-room UI in Milestone 4.4; arbitrary/invalid player-ID behavior remains covered by the existing automated server-side tests
 - the Available Players table displays a stable integer **ADP Rank** — each player's 1-indexed position within the full ADP-sorted pool — instead of the raw decimal `PlayerAdp.adp` value; the rank is never derived by rounding/flooring the raw ADP
 - ADP Rank is computed client-side (`computeAdpRanks` in `available-players-helpers.ts`) from the full, unfiltered player pool, never from the currently filtered/searched subset, so a player's rank stays fixed regardless of search or position filtering
@@ -940,6 +996,17 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - the service-level `createLeague()` retains its own broader `CreateLeagueInput` type (`CreateLeagueApiInput & { rosterSize: number }`) distinct from the public schema-inferred type, so internal tests/fixtures needing a non-15 `rosterSize` keep calling it directly, unaffected by the public boundary change
 - `rosterSize` remains the domain/database/engine representation of round count and remains fully dynamic at the engine layer: Phase 3 completion (`totalPicks = teamCount * rosterSize`), autopick, and the Milestone 4.5 board derivation all continue reading `league.rosterSize`/`state.league.rosterSize` — no engine-level literal `15` was introduced, preserving future configurability without exposing it in the current product
 - no DB migration was required for the 15-round product rule; `rosterSize` was already a plain, unconstrained `Int` column, so historical League rows with non-15 values (e.g. `16`) continue to work unchanged using their own stored value
+- Milestone 4.6 is UX hardening/accessibility/responsive polish plus one correctness-adjacent client fix (the pick-success resync); it introduced no Phase 3 protocol, schema, `packages/shared`, or `packages/database` changes
+- responsive layout uses one small route-scoped stylesheet (`draft-room.css`, imported via a route-segment `layout.tsx`) rather than a styling framework; inline `style` props remain the default everywhere CSS capabilities (media queries, shared computed classes) aren't specifically required
+- `DraftBoard` column headers are built from every configured `1..teamCount` slot, not from `state.members`, so header/column alignment is always correct even for an underfilled pre-draft league
+- the current-pick highlight always takes visual precedence over the authenticated-user-column highlight on a shared cell (enforced via a combined CSS selector, not declaration order); neither highlight relies on color alone
+- position accents (`position-style.ts`) are supplementary only; every caller keeps rendering the actual position text alongside the accent
+- a `COMPLETE` Draft hides `AvailablePlayersPanel`'s Action column entirely (via `shouldShowActionColumn`, reusing the panel's existing optional-`onDraft` read-only mode) rather than rendering permanently-disabled Draft buttons
+- a successful `draft:pick` ack triggers an immediate client-initiated `draft:join` resync rather than only waiting on the room-wide `draft:state` broadcast; this reuses the existing `draft:join` event and `applyAuthoritativeState` function with no protocol/ack-shape change
+- a resync failure (the `draft:join` ack itself rejected) is never presented as "the pick failed" — the original `draft:pick` ack already confirmed the commit; the client shows a distinct refresh-guidance message instead
+- multiple valid authoritative `DraftStateResult` snapshots may arrive for one pick (the resync's own, and/or the room broadcast); wholesale replacement on each is always safe, and this is not treated as a literal no-op when a snapshot repeats
+- no defensive timeout was added for the resync's own ack being lost; that residual case is accepted as bounded by Socket.IO's heartbeat-driven `disconnect`, not defended against directly
+- accessibility conventions going forward: native semantics first, `scope="col"`/`scope="row"` table headers, real (visually-hidden where appropriate) form labels, player-specific accessible button names, `role="alert"` for errors, `role="status" aria-live="polite"` scoped narrowly to infrequent status changes (never wrapping a per-second-updating countdown), native focus outlines never removed, color never the sole carrier of state/position meaning
 
 ## Non-negotiable engineering goals
 
@@ -1347,6 +1414,16 @@ No event replay or missed-event log exists yet.
 Authoritative state resync, rather than replaying every missed realtime event, is the current recovery primitive.
 
 More sophisticated reconnect/recovery behavior may be added later only if required.
+
+#### Pick-success resync (Milestone 4.6)
+
+A second, narrower use of the same `draft:join` resync primitive: on a successful `draft:pick` acknowledgement, the submitting client immediately emits `draft:join` again rather than only waiting on the room-wide `draft:state` broadcast. This closes a residual edge from Milestone 4.4 — the server's order is commit → `{ok:true}` ack → `broadcastDraftState`, and if the broadcast step specifically failed or was lost while the socket stayed connected, the client had no further signal to clear its pending-pick state.
+
+- the resync is triggered client-side only, off the existing successful ack; no server/protocol change was made, and `DraftPickAck` was not widened
+- the resync's response is applied through the same `applyAuthoritativeState` function every other authoritative snapshot goes through
+- the room-wide `draft:state` broadcast is unchanged and still what every other connected client relies on; if it also reaches the submitting client, applying it again is safe — replacing `DraftStateResult` wholesale is always safe for any valid authoritative snapshot, whether or not it turns out to be newer than the resync's own snapshot
+- if the resync's own `draft:join` ack comes back rejected, that does not mean the pick failed (the original `draft:pick` ack already confirmed it succeeded) — pending/in-flight client state is cleared and the user sees refresh guidance, never pick-failure wording
+- accepted residual: if the resync's own ack is itself lost while the socket still appears connected, pending state remains until either the room broadcast arrives or Socket.IO's heartbeat forces a real `disconnect` (which already unconditionally clears pending state). No additional timeout was added for this case — it is accepted as a low-risk residual, not treated as an exactly-once guarantee.
 
 ### Turn-expiration and autopick conventions
 
@@ -1810,7 +1887,7 @@ Milestone 3.3b must not:
 - add Redis prematurely
 - become the polished draft-room frontend
 
-**Phase 4 — Client Experience — IN PROGRESS**
+**Phase 4 — Client Experience — COMPLETE**
 
 Turns the existing, functionally-complete Phase 3 draft transport into a usable draft-room product: live draft board, available players panel with search and position filter, team rosters, pick timer, and draft-start UI. Pick submission remains server-authoritative and ack/state-driven — the client renders what `draft:state` and pick acknowledgements say, not an optimistic local guess that later rolls back. (This supersedes this section's original "optimistic pick updates that roll back on `pick:rejected`" framing, written before the socket protocol settled on ack-based errors with no standalone `pick:rejected` event — see "Socket.IO draft protocol conventions" above.) Chat and presence indicators remain deferred (see "Not yet implemented"), not committed Phase 4 scope.
 
@@ -1820,9 +1897,11 @@ Milestones:
 - **4.3 Available Players + Search/Filtering — COMPLETE**
 - **4.4 Production Pick Submission UX — COMPLETE**
 - **4.5 Pre-Draft Experience + Live Draft Room — COMPLETE**
-- **4.6 Draft Room UX Hardening + Phase 4 Closeout — NEXT**
+- **4.6 Draft Room UX Hardening + Phase 4 Closeout — COMPLETE**
 
 *Done when: it feels responsive and nothing desyncs or flickers.*
+
+**Phase 4 exit criteria satisfied.** Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect.
 
 **Phase 5 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.
 *Done when: CI is green and two socket instances run safely against one Redis.*

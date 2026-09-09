@@ -1,4 +1,5 @@
 import type { AvailablePlayer } from "../../../../lib/players/get-available-players";
+import type { DraftPhase } from "./draft-room-helpers";
 
 // Pure, DOM-free filtering over the already server-sorted AvailablePlayer[]
 // pool — mirrors draft-room-helpers.ts's pattern of deriving display state
@@ -63,4 +64,14 @@ export function computeAdpRanks(players: AvailablePlayer[]): Map<string, number>
     ranks.set(player.id, rank);
   }
   return ranks;
+}
+
+// Milestone 4.6: drives whether AvailablePlayersPanel's Action column
+// renders at all. ACTIVE is the only phase drafting is ever possible in — a
+// COMPLETE (or PENDING) draft hides the column entirely by reusing the
+// panel's existing read-only mode (omitting onDraft/canDraft/pendingPlayerId
+// upstream in DraftRoomClient), rather than rendering permanently-disabled
+// Draft buttons.
+export function shouldShowActionColumn(phase: DraftPhase): boolean {
+  return phase === "ACTIVE";
 }

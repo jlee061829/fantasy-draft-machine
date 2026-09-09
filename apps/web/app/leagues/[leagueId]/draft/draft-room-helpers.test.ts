@@ -2,10 +2,12 @@ import type { DraftStateResult } from "@fdm/shared";
 import { describe, expect, it } from "vitest";
 import {
   formatCountdown,
+  getCountdownUrgency,
   getCurrentPickerName,
   getDraftedPlayerIds,
   getDraftPhase,
   getMsRemaining,
+  getRoundInfo,
   isYourTurn,
 } from "./draft-room-helpers";
 
@@ -207,5 +209,73 @@ describe("getDraftedPlayerIds", () => {
     const ids = getDraftedPlayerIds(state);
     expect(ids.size).toBe(1);
     expect(ids.has("player-a")).toBe(true);
+  });
+});
+
+describe("getRoundInfo", () => {
+  it("is null when there is no Draft", () => {
+    expect(getRoundInfo(stateWithDraft(null))).toBeNull();
+  });
+
+  it("is null once the Draft is COMPLETE", () => {
+    const state = stateWithDraft({
+      id: "d1",
+      status: "COMPLETE",
+      currentPickNumber: 64,
+      currentUserId: null,
+      turnDeadline: null,
+    });
+    expect(getRoundInfo(state)).toBeNull();
+  });
+
+  it("derives round/total/pickNumber for an early pick", () => {
+    // baseLeague: teamCount 4, rosterSize 16.
+    const state = stateWithDraft({
+      id: "d1",
+      status: "ACTIVE",
+      currentPickNumber: 1,
+      currentUserId: "user-1",
+      turnDeadline: null,
+    });
+    expect(getRoundInfo(state)).toEqual({ round: 1, totalRounds: 16, pickNumber: 1 });
+  });
+
+  it("rolls over to the next round exactly at the boundary", () => {
+    const state = stateWithDraft({
+      id: "d1",
+      status: "ACTIVE",
+      currentPickNumber: 5,
+      currentUserId: "user-1",
+      turnDeadline: null,
+    });
+    expect(getRoundInfo(state)).toEqual({ round: 2, totalRounds: 16, pickNumber: 5 });
+  });
+
+  it("reports the final round for the last pick", () => {
+    const state = stateWithDraft({
+      id: "d1",
+      status: "ACTIVE",
+      currentPickNumber: 64,
+      currentUserId: "user-1",
+      turnDeadline: null,
+    });
+    expect(getRoundInfo(state)).toEqual({ round: 16, totalRounds: 16, pickNumber: 64 });
+  });
+});
+
+describe("getCountdownUrgency", () => {
+  it("is critical at and below 5 seconds remaining, including zero", () => {
+    expect(getCountdownUrgency(0)).toBe("critical");
+    expect(getCountdownUrgency(5_000)).toBe("critical");
+  });
+
+  it("is warning between 5 and 15 seconds remaining", () => {
+    expect(getCountdownUrgency(5_001)).toBe("warning");
+    expect(getCountdownUrgency(15_000)).toBe("warning");
+  });
+
+  it("is normal above 15 seconds remaining", () => {
+    expect(getCountdownUrgency(15_001)).toBe("normal");
+    expect(getCountdownUrgency(120_000)).toBe("normal");
   });
 });

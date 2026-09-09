@@ -129,6 +129,18 @@ describe("DraftPage (pre-draft)", () => {
     expect(panels[0]!.props.onDraft).toBeUndefined();
   });
 
+  it("passes currentUserId into DraftBoard for column highlighting", async () => {
+    const owner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+    const { league } = await testLeague(owner.id);
+
+    const page = await DraftPage({ params: paramsFor(league.id) });
+
+    const boards = findElementsByType(page, DraftBoard);
+    expect(boards).toHaveLength(1);
+    expect(boards[0]!.props.currentUserId).toBe(owner.id);
+  });
+
   it("renders a disabled Start Draft control for the commissioner when the league is not full", async () => {
     const owner = await createTestUser();
     authMock.mockResolvedValue({ user: { id: owner.id } });

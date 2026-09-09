@@ -16,9 +16,11 @@ import {
   getDraftedPlayerIds,
   getDraftPhase,
   getMsRemaining,
+  getRoundInfo,
   isYourTurn,
 } from "./draft-room-helpers";
-import { canSubmitPick, mapPickErrorToMessage } from "./pick-submission-helpers";
+import { shouldShowActionColumn } from "./available-players-helpers";
+import { canSubmitPick, getPickAckAction } from "./pick-submission-helpers";
 import { TeamRosterPanel } from "./TeamRosterPanel";
 import { TurnBanner } from "./TurnBanner";
 
@@ -60,6 +62,13 @@ export function DraftRoomClient({
   const [joinError, setJoinError] = useState<string | null>(null);
   const [pendingPlayerId, setPendingPlayerId] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
+  // Milestone 4.6: distinct from pickError. pickError means the pick itself
+  // was rejected (draft:pick ack {ok:false}) — the pick did not happen.
+  // resyncError means the OPPOSITE: the pick was already accepted
+  // ({ok:true}) and this is only about the follow-up draft:join resync
+  // (see handleDraftPlayer below) failing to come back. Wording must never
+  // imply the pick failed, since it didn't.
+  const [resyncError, setResyncError] = useState<string | null>(null);
   const socketRef = useRef<DraftSocket | null>(null);
   // Synchronous duplicate-emission guard: React state updates (pendingPlayerId)
   // aren't guaranteed to be applied before a second rapid click handler runs,
@@ -83,6 +92,7 @@ export function DraftRoomClient({
     setState(next);
     setPendingPlayerId(null);
     pickInFlightRef.current = false;
+    setResyncError(null);
   }
 
   useEffect(() => {
@@ -139,6 +149,7 @@ export function DraftRoomClient({
       // (via applyAuthoritativeState) is what determines the actual truth.
       setPendingPlayerId(null);
       pickInFlightRef.current = false;
+      setResyncError(null);
       if (reason === "io client disconnect") return;
       setStatus(socket.active ? "reconnecting" : "error");
     });
@@ -226,26 +237,45 @@ export function DraftRoomClient({
   const msRemaining = getMsRemaining(turnDeadline, now);
   const draftedPlayerIds = useMemo(() => getDraftedPlayerIds(state), [state]);
   const canDraft = canSubmitPick(phase, yourTurn, status, pendingPlayerId);
+  const roundInfo = useMemo(() => getRoundInfo(state), [state]);
+  // COMPLETE hides the Action column entirely (reusing AvailablePlayersPanel's
+  // existing read-only mode) rather than rendering permanently-disabled
+  // Draft buttons — see available-players-helpers.ts.
+  const showActionColumn = shouldShowActionColumn(phase);
 
-  // Click -> draft:pick -> ack. The success ack ({ ok: true }) intentionally
-  // carries no state and does NOT itself clear pending/apply anything: it
-  // only means the request was accepted for processing, not that the room's
-  // authoritative state yet reflects it. Pending/in-flight stay set until
-  // the server's subsequent draft:state broadcast reaches
-  // applyAuthoritativeState above (this socket is already in the league
-  // room from draft:join, so it receives that broadcast itself). Only a
-  // rejection ack clears pending/in-flight directly, since a rejection is
-  // final and no further state change is coming for this request.
+  // Click -> draft:pick -> ack.
   //
-  // Known residual edge (see CLAUDE.md Milestone 4.4 notes / handoff
-  // summary): if the server commits the pick, sends the success ack, and
-  // then its subsequent draft:state broadcast is somehow lost while the
-  // socket stays connected (no disconnect event fires), pending/in-flight
-  // would remain stuck with no further signal to clear them. This is not
-  // handled here (no timeout/forced-resync machinery) — deferred to
-  // Milestone 4.6 rather than complicating this flow for a failure mode
-  // that requires the broadcast step specifically, not just the commit, to
-  // fail on an otherwise-healthy connection.
+  // Milestone 4.6: on a successful ack ({ok:true}), the server has already
+  // committed the pick (draft-pick.ts only acks {ok:true} after submitPick
+  // resolves) — so rather than passively waiting for the room-wide
+  // draft:state broadcast to eventually reach applyAuthoritativeState (which
+  // can fail/be lost after a successful commit while the socket stays
+  // connected — the known 4.4 edge), this immediately requests fresh
+  // authoritative state directly via the existing draft:join round trip.
+  // The room-wide draft:state listener above stays registered and
+  // unchanged — it's still how every OTHER client in the room finds out
+  // about this pick, and if it also reaches this client, applying it again
+  // is safe: replacing DraftStateResult wholesale with each valid
+  // authoritative snapshot is always safe, whether it's the same state this
+  // resync already applied or (if further picks happened in the meantime)
+  // an even newer one.
+  //
+  // If the resync's own draft:join ack comes back rejected, that does NOT
+  // mean the pick failed — the original draft:pick ack already confirmed
+  // it succeeded. Pending/in-flight are cleared (there's nothing left to
+  // wait for from this specific request) and a distinct resyncError is
+  // shown instead of pickError, with wording that never implies the pick
+  // itself failed.
+  //
+  // Residual edge, accepted rather than defended against with an arbitrary
+  // timeout (see CLAUDE.md Milestone 4.6 notes): if this resync's own ack
+  // is itself lost while the socket otherwise appears connected, pending
+  // state would remain stuck until either the room-wide draft:state
+  // broadcast eventually arrives, or Socket.IO's own ping/pong heartbeat
+  // detects the connection is actually dead and fires "disconnect" (which
+  // already unconditionally clears pending/in-flight above). This is not a
+  // mathematical exactly-once guarantee, but it substantially closes the
+  // documented 4.4 failure mode without a broader protocol change.
   function handleDraftPlayer(playerId: string) {
     if (pickInFlightRef.current) return;
     const socket = socketRef.current;
@@ -254,13 +284,29 @@ export function DraftRoomClient({
     pickInFlightRef.current = true;
     setPendingPlayerId(playerId);
     setPickError(null);
+    setResyncError(null);
 
     socket.emit("draft:pick", { leagueId, playerId }, (ack) => {
-      if (!ack.ok) {
+      const action = getPickAckAction(ack);
+
+      if (action.type === "error") {
         pickInFlightRef.current = false;
         setPendingPlayerId(null);
-        setPickError(mapPickErrorToMessage(ack.error));
+        setPickError(action.message);
+        return;
       }
+
+      socket.emit("draft:join", { leagueId }, (resyncAck) => {
+        if (resyncAck.ok) {
+          applyAuthoritativeState(resyncAck.state);
+          return;
+        }
+        pickInFlightRef.current = false;
+        setPendingPlayerId(null);
+        setResyncError(
+          "The draft room couldn't refresh after your pick. Refresh the page to load the latest state.",
+        );
+      });
     });
   }
 
@@ -284,7 +330,11 @@ export function DraftRoomClient({
         <ConnectionStatusBadge status={status} />
       </header>
 
-      {joinError && <p style={{ color: "#cf222e" }}>Unable to join draft room: {joinError}</p>}
+      {joinError && (
+        <p role="alert" style={{ color: "#cf222e" }}>
+          Unable to join draft room: {joinError}
+        </p>
+      )}
 
       <section
         style={{
@@ -299,24 +349,34 @@ export function DraftRoomClient({
           pickerName={pickerName}
           isYourTurn={yourTurn}
           msRemaining={msRemaining}
+          roundInfo={roundInfo}
         />
       </section>
 
       <section style={{ marginBottom: 16 }}>
         <h2>Draft Board</h2>
-        <DraftBoard state={state} />
+        <DraftBoard state={state} currentUserId={currentUserId} />
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 16, alignItems: "start" }}>
+      <div className="fdm-live-grid">
         <div>
           <AvailablePlayersPanel
             players={players}
             draftedPlayerIds={draftedPlayerIds}
-            canDraft={canDraft}
-            pendingPlayerId={pendingPlayerId}
-            onDraft={handleDraftPlayer}
+            canDraft={showActionColumn ? canDraft : undefined}
+            pendingPlayerId={showActionColumn ? pendingPlayerId : undefined}
+            onDraft={showActionColumn ? handleDraftPlayer : undefined}
           />
-          {pickError && <p style={{ color: "#cf222e", marginTop: 8 }}>{pickError}</p>}
+          {pickError && (
+            <p role="alert" style={{ color: "#cf222e", marginTop: 8 }}>
+              {pickError}
+            </p>
+          )}
+          {resyncError && (
+            <p role="alert" style={{ color: "#cf222e", marginTop: 8 }}>
+              {resyncError}
+            </p>
+          )}
         </div>
 
         <TeamRosterPanel state={state} currentUserId={currentUserId} />

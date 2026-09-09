@@ -1,4 +1,4 @@
-import type { SocketErrorCode } from "@fdm/shared";
+import type { DraftPickAck, SocketErrorCode } from "@fdm/shared";
 import type { ConnectionStatus } from "./ConnectionStatusBadge";
 import type { DraftPhase } from "./draft-room-helpers";
 
@@ -45,4 +45,19 @@ const PICK_ERROR_MESSAGES: Record<SocketErrorCode, string> = {
 
 export function mapPickErrorToMessage(code: SocketErrorCode): string {
   return PICK_ERROR_MESSAGES[code];
+}
+
+export type PickAckAction = { type: "resync" } | { type: "error"; message: string };
+
+// Milestone 4.6: the pure decision behind DraftRoomClient's draft:pick ack
+// handling. A successful ack ({ok:true}) means the server already committed
+// the pick — see draft-pick.ts, whose ack fires only after submitPick
+// resolves — so the only thing left to do is pull fresh authoritative state
+// (DraftRoomClient does this via a fresh draft:join, not by waiting on the
+// room-wide broadcastDraftState, which can fail/be lost after a successful
+// commit). A rejection ack maps to the same user-facing message
+// mapPickErrorToMessage already produces.
+export function getPickAckAction(ack: DraftPickAck): PickAckAction {
+  if (ack.ok) return { type: "resync" };
+  return { type: "error", message: mapPickErrorToMessage(ack.error) };
 }

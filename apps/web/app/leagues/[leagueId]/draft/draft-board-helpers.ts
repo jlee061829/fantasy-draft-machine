@@ -1,4 +1,4 @@
-import type { DraftStateResult, DraftStatePick } from "@fdm/shared";
+import type { DraftStateDraftType, DraftStateResult, DraftStatePick } from "@fdm/shared";
 import { getPickerForPickNumber } from "@fdm/shared";
 
 // Milestone 4.5: one shared board-geometry derivation reused by both the
@@ -59,4 +59,23 @@ export function deriveDraftBoard(state: DraftStateResult): DraftBoard {
   }
 
   return { rounds, slots, cells };
+}
+
+// Milestone 4.6: purely a display cue (a "→"/"←" marker next to a round's
+// row label) — never consulted to compute pick order itself, which remains
+// getPickerForPickNumber's job via deriveDraftBoard above. LINEAR never
+// reverses; SNAKE reverses on every even human-facing round, matching
+// getPickerForPickNumber's own odd/even round convention (see its own tests
+// in packages/shared).
+export function getRoundDirection(round: number, draftType: DraftStateDraftType): "→" | "←" {
+  if (draftType === "LINEAR") return "→";
+  return round % 2 === 1 ? "→" : "←";
+}
+
+// Milestone 4.6: the 1-indexed round a given overall pick number falls in.
+// Shared by the board's round row labels and TeamRosterPanel's per-pick
+// round context, so there is exactly one "which round is pick N in"
+// calculation in the codebase.
+export function getRoundForPick(pickNumber: number, teamCount: number): number {
+  return Math.ceil(pickNumber / teamCount);
 }

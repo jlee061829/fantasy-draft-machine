@@ -118,6 +118,11 @@ export default async function DraftPage({
       </p>
 
       <h2>Draft Order</h2>
+      <p style={{ margin: "4px 0", color: "#57606a", fontSize: 13 }}>
+        {league.draftType === "SNAKE"
+          ? "Snake draft — the order reverses at the end of every round."
+          : "Linear draft — the same order repeats every round."}
+      </p>
       <ol>
         {members.map((member) => (
           <li key={member.membershipId}>
@@ -143,7 +148,7 @@ export default async function DraftPage({
       )}
 
       <h2>Draft Board</h2>
-      <DraftBoard state={boardState} />
+      <DraftBoard state={boardState} currentUserId={currentUserId} />
 
       <div style={{ marginTop: 16 }}>
         <AvailablePlayersPanel players={players} draftedPlayerIds={new Set()} />

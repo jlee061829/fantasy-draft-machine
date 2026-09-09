@@ -8,6 +8,7 @@ import {
   filterAvailablePlayers,
   type PositionFilter,
 } from "./available-players-helpers";
+import { getPositionAccentClass } from "./position-style";
 
 // Same fantasy positions the seed pipeline recognizes
 // (packages/database/src/seed/schemas/sleeper.ts's FANTASY_POSITIONS) —
@@ -23,7 +24,11 @@ interface AvailablePlayersPanelProps {
   // no Action column) instead of a second player-list implementation.
   // Omitting onDraft is what actually drives read-only mode — canDraft/
   // pendingPlayerId are meaningless without it and are ignored if somehow
-  // provided without it.
+  // provided without it. Milestone 4.6: the live room also uses this same
+  // read-only mode once the Draft is COMPLETE (see
+  // available-players-helpers.ts's shouldShowActionColumn), so the Action
+  // column disappears entirely rather than showing permanently-disabled
+  // Draft buttons.
   canDraft?: boolean;
   pendingPlayerId?: string | null;
   onDraft?: (playerId: string) => void;
@@ -42,6 +47,15 @@ interface AvailablePlayersPanelProps {
 // component still never touches the socket itself — DraftRoomClient remains
 // the sole owner of submission/connection state and just tells this panel
 // whether drafting is currently allowed and which row (if any) is pending.
+//
+// Milestone 4.6: accessibility pass. Search/position filter get real
+// <label>s (visually hidden — the input's placeholder and the panel's own
+// heading already communicate their purpose visually, but a label is
+// required for the field to have any accessible name at all), each Draft
+// button gets a player-specific accessible name (a flat list of buttons all
+// named "Draft" is meaningless out of visual context), and position gets a
+// small supplementary color accent that never replaces the visible
+// position text.
 export function AvailablePlayersPanel({
   players,
   draftedPlayerIds,
@@ -75,57 +89,96 @@ export function AvailablePlayersPanel({
       <h2 style={{ marginTop: 0 }}>Available Players</h2>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <input
-          type="text"
-          placeholder="Search players…"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          style={{ flex: "1 1 200px", padding: 6 }}
-        />
-        <select value={position} onChange={(event) => setPosition(event.target.value)}>
-          <option value={ALL_POSITIONS_FILTER}>All</option>
-          {POSITIONS.map((pos) => (
-            <option key={pos} value={pos}>
-              {pos}
-            </option>
-          ))}
-        </select>
+        <div style={{ flex: "1 1 200px" }}>
+          <label htmlFor="available-players-search" className="sr-only">
+            Search players by name
+          </label>
+          <input
+            id="available-players-search"
+            type="text"
+            placeholder="Search players…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            style={{ width: "100%", padding: 6, boxSizing: "border-box" }}
+          />
+        </div>
+        <div>
+          <label htmlFor="available-players-position" className="sr-only">
+            Filter by position
+          </label>
+          <select
+            id="available-players-position"
+            value={position}
+            onChange={(event) => setPosition(event.target.value)}
+          >
+            <option value={ALL_POSITIONS_FILTER}>All</option>
+            {POSITIONS.map((pos) => (
+              <option key={pos} value={pos}>
+                {pos}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {visiblePlayers.length === 0 ? (
         <p>No players match your search/filter.</p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
+        <div className="fdm-table-scroll">
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #d0d7de" }}>
-                <th style={{ padding: "4px 8px" }}>Player</th>
-                <th style={{ padding: "4px 8px" }}>Pos</th>
-                <th style={{ padding: "4px 8px" }}>Team</th>
-                <th style={{ padding: "4px 8px" }}>ADP Rank</th>
-                {onDraft && <th style={{ padding: "4px 8px" }}></th>}
+                <th scope="col" style={{ padding: "4px 8px" }}>
+                  Player
+                </th>
+                <th scope="col" style={{ padding: "4px 8px" }}>
+                  Pos
+                </th>
+                <th scope="col" style={{ padding: "4px 8px" }}>
+                  Team
+                </th>
+                <th scope="col" style={{ padding: "4px 8px" }}>
+                  ADP Rank
+                </th>
+                {onDraft && (
+                  <th scope="col" style={{ padding: "4px 8px" }}>
+                    <span className="sr-only">Draft action</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {visiblePlayers.map((player) => (
-                <tr key={player.id} style={{ borderBottom: "1px solid #eaeef2" }}>
-                  <td style={{ padding: "4px 8px" }}>{player.fullName}</td>
-                  <td style={{ padding: "4px 8px" }}>{player.position}</td>
-                  <td style={{ padding: "4px 8px" }}>{player.nflTeam}</td>
-                  <td style={{ padding: "4px 8px" }}>{adpRanks.get(player.id) ?? "—"}</td>
-                  {onDraft && (
+              {visiblePlayers.map((player) => {
+                const isPending = pendingPlayerId === player.id;
+                return (
+                  <tr key={player.id} style={{ borderBottom: "1px solid #eaeef2" }}>
+                    <td style={{ padding: "4px 8px" }}>{player.fullName}</td>
                     <td style={{ padding: "4px 8px" }}>
-                      <button
-                        type="button"
-                        disabled={!canDraft}
-                        onClick={() => onDraft(player.id)}
-                      >
-                        {pendingPlayerId === player.id ? "Drafting…" : "Draft"}
-                      </button>
+                      <span
+                        className={`fdm-pos-dot ${getPositionAccentClass(player.position)}`}
+                        aria-hidden="true"
+                      />
+                      {player.position}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td style={{ padding: "4px 8px" }}>{player.nflTeam}</td>
+                    <td style={{ padding: "4px 8px" }}>{adpRanks.get(player.id) ?? "—"}</td>
+                    {onDraft && (
+                      <td style={{ padding: "4px 8px" }}>
+                        <button
+                          type="button"
+                          disabled={!canDraft}
+                          aria-label={
+                            isPending ? `Drafting ${player.fullName}…` : `Draft ${player.fullName}`
+                          }
+                          onClick={() => onDraft(player.id)}
+                        >
+                          {isPending ? "Drafting…" : "Draft"}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

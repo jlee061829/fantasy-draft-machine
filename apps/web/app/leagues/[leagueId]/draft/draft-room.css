@@ -1,0 +1,129 @@
+/*
+ * Milestone 4.6: small, route-scoped stylesheet for the pre-draft and live
+ * draft-room pages only (imported once by this route's layout.tsx). Every
+ * rule here exists because it needs a CSS capability inline `style` props
+ * genuinely cannot express (a media-query breakpoint, or a value computed
+ * once and reused across many elements) — this is not a migration off
+ * inline styles, which remain the convention everywhere else in both pages.
+ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Live-room primary layout: Available Players (wide) beside My Team
+   (narrow) on desktop, collapsing to one column on narrow viewports so
+   neither panel gets squeezed. */
+.fdm-live-grid {
+  display: grid;
+  grid-template-columns: 3fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .fdm-live-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Shared by the Draft Board and the Available Players table: horizontal
+   overflow lives inside the wrapper, never the page, so a wide board or
+   player table never causes page-level horizontal scroll. Draft Board sets
+   its own inline min-width (it depends on team count); this default covers
+   the Available Players table, whose column count is fixed. */
+.fdm-table-scroll {
+  overflow-x: auto;
+}
+
+.fdm-table-scroll table {
+  min-width: 560px;
+}
+
+/* Team roster panel: a full 15-round roster shouldn't push the rest of the
+   live-room layout around, so it scrolls internally past a bounded height. */
+.fdm-roster-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* Position accents — supplementary only. Every caller that applies one of
+   these classes also renders the position as visible text; color is never
+   the sole carrier of position identity. */
+.fdm-pos-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.fdm-pos-qb {
+  background-color: #8250df;
+}
+.fdm-pos-rb {
+  background-color: #1a7f37;
+}
+.fdm-pos-wr {
+  background-color: #0969da;
+}
+.fdm-pos-te {
+  background-color: #bf8700;
+}
+.fdm-pos-k {
+  background-color: #bc4c00;
+}
+.fdm-pos-def {
+  background-color: #57606a;
+}
+.fdm-pos-neutral {
+  background-color: #8c959f;
+}
+
+.fdm-auto-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background-color: #fff8c5;
+  color: #7d4e00;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+/* Draft Board cell/column states. isCurrentPick ("on the clock") must always
+   read as visually stronger than the authenticated user's column highlight,
+   even on a cell where both apply — the combined selector below has higher
+   specificity than either rule alone and wins regardless of declaration
+   order, so a current-pick cell in the user's own column still reads as
+   "current pick" first. Neither state relies on color alone: the user's
+   column also carries a "(you)" text marker in its header, and a
+   current-pick cell also carries visible "On the clock" text plus an
+   .sr-only announcement (see DraftBoard.tsx). */
+.fdm-user-column {
+  background-color: #f6f8fa;
+}
+
+.fdm-current-pick {
+  background-color: #ddf4ff;
+  border: 2px solid #0969da;
+}
+
+.fdm-current-pick.fdm-user-column {
+  background-color: #ddf4ff;
+}
+
+.fdm-empty-cell {
+  border: 1px dashed #d0d7de;
+}

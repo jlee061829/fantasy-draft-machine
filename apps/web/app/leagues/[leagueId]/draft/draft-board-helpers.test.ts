@@ -1,6 +1,6 @@
 import type { DraftStateResult, DraftStatePick } from "@fdm/shared";
 import { describe, expect, it } from "vitest";
-import { deriveDraftBoard } from "./draft-board-helpers";
+import { deriveDraftBoard, getRoundDirection, getRoundForPick } from "./draft-board-helpers";
 
 // Pure-function unit tests, no Postgres/DOM: these exercise only the board
 // geometry/overlay logic built on top of an already-authoritative (or, for
@@ -170,5 +170,33 @@ describe("deriveDraftBoard", () => {
       }),
     );
     expect(board.cells[0]![0]!.pick?.wasAutopick).toBe(true);
+  });
+});
+
+describe("getRoundDirection", () => {
+  it("is always left-to-right for LINEAR", () => {
+    expect(getRoundDirection(1, "LINEAR")).toBe("→");
+    expect(getRoundDirection(2, "LINEAR")).toBe("→");
+    expect(getRoundDirection(7, "LINEAR")).toBe("→");
+  });
+
+  it("alternates for SNAKE, starting left-to-right on round 1", () => {
+    expect(getRoundDirection(1, "SNAKE")).toBe("→");
+    expect(getRoundDirection(2, "SNAKE")).toBe("←");
+    expect(getRoundDirection(3, "SNAKE")).toBe("→");
+    expect(getRoundDirection(4, "SNAKE")).toBe("←");
+  });
+});
+
+describe("getRoundForPick", () => {
+  it("returns round 1 for every pick in the first round", () => {
+    expect(getRoundForPick(1, 12)).toBe(1);
+    expect(getRoundForPick(12, 12)).toBe(1);
+  });
+
+  it("rolls over to the next round exactly at the boundary", () => {
+    expect(getRoundForPick(13, 12)).toBe(2);
+    expect(getRoundForPick(24, 12)).toBe(2);
+    expect(getRoundForPick(25, 12)).toBe(3);
   });
 });

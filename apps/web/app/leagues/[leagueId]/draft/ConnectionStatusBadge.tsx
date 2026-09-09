@@ -16,10 +16,17 @@ const COLOR: Record<ConnectionStatus, string> = {
 
 // Presentational only — the connection lifecycle itself lives entirely in
 // DraftRoomClient's socket event listeners. This just renders whatever
-// status it's told.
+// status it's told. role="status"/aria-live="polite" announces a real
+// connection-state transition (connecting -> live, live -> reconnecting,
+// etc.) without needing a separate visually-hidden live region — status
+// changes here are infrequent (only on an actual connect/disconnect/
+// reconnect event), unlike TurnBanner's per-second countdown, which is
+// deliberately kept outside any live region for that reason.
 export function ConnectionStatusBadge({ status }: { status: ConnectionStatus }) {
   return (
     <span
+      role="status"
+      aria-live="polite"
       style={{
         display: "inline-block",
         padding: "2px 8px",

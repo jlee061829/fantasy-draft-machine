@@ -4,6 +4,7 @@ import {
   ALL_POSITIONS_FILTER,
   computeAdpRanks,
   filterAvailablePlayers,
+  shouldShowActionColumn,
 } from "./available-players-helpers";
 
 const players: AvailablePlayer[] = [
@@ -122,5 +123,13 @@ describe("computeAdpRanks", () => {
 
   it("returns an empty map for an empty pool", () => {
     expect(computeAdpRanks([])).toEqual(new Map());
+  });
+});
+
+describe("shouldShowActionColumn", () => {
+  it("is true only when the draft phase is ACTIVE", () => {
+    expect(shouldShowActionColumn("ACTIVE")).toBe(true);
+    expect(shouldShowActionColumn("PENDING")).toBe(false);
+    expect(shouldShowActionColumn("COMPLETE")).toBe(false);
   });
 });
