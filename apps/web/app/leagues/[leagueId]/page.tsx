@@ -4,7 +4,6 @@ import { auth, signIn } from "../../../lib/auth";
 import { getLeagueDetail } from "../../../lib/leagues/get-league-detail";
 import { LeagueSettingsForm } from "./league-settings-form";
 import { MemberOrderForm } from "./member-order-form";
-import { StartDraftForm } from "./start-draft-form";
 
 // Milestone 2.3 manual-verification page: minimal, unstyled, just enough to
 // exercise getLeagueDetail as an authenticated league member. Nonexistent
@@ -74,23 +73,14 @@ export default async function LeagueDetailPage({
       </ol>
 
       <h2>Draft</h2>
-      {detail.draft ? (
-        <p>
-          <Link href={`/leagues/${league.id}/draft`}>Enter draft room</Link>
-        </p>
-      ) : session.user.id === league.ownerId ? (
-        <StartDraftForm
-          leagueId={league.id}
-          isFull={members.length === league.teamCount}
-          membersCount={members.length}
-          teamCount={league.teamCount}
-        />
-      ) : (
-        <p>
-          The commissioner hasn't started the draft yet — {members.length}/{league.teamCount}{" "}
-          joined.
-        </p>
-      )}
+      {/* Milestone 4.5: this is now a stable, unconditional link — the
+          pre-draft page at /leagues/[leagueId]/draft is the single place
+          that branches on whether a Draft exists yet, who the commissioner
+          is, and whether the league is full. Duplicating that branching
+          here as well would mean maintaining it in two places. */}
+      <p>
+        <Link href={`/leagues/${league.id}/draft`}>View Draft</Link>
+      </p>
 
       {session.user.id === league.ownerId && (
         <>

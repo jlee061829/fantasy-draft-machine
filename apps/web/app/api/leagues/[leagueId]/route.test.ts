@@ -82,6 +82,20 @@ describe("PATCH /api/leagues/[leagueId]", () => {
     expect(response.status).toBe(400);
   });
 
+  // Milestone 4.5 product rule: draft length is fixed, so rosterSize is
+  // rejected as an unrecognized settings field, not range-validated.
+  it("rejects an attempt to change rosterSize with 400 and changes nothing", async () => {
+    const owner = await createTestUser();
+    const { league } = await createTestLeague(owner.id);
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+
+    const response = await PATCH(jsonRequest({ rosterSize: 20 }), ctxFor(league.id));
+
+    expect(response.status).toBe(400);
+    const unchanged = await prisma.league.findUnique({ where: { id: league.id } });
+    expect(unchanged?.rosterSize).toBe(16);
+  });
+
   it("returns 404 for a nonexistent league", async () => {
     const someone = await createTestUser();
     authMock.mockResolvedValue({ user: { id: someone.id } });

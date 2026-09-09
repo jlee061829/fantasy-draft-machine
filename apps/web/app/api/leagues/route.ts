@@ -1,6 +1,6 @@
 import { auth } from "../../../lib/auth";
 import { createLeague } from "../../../lib/leagues/create-league";
-import { createLeagueInputSchema } from "../../../lib/leagues/schema";
+import { createLeagueInputSchema, PRODUCT_ROSTER_SIZE } from "../../../lib/leagues/schema";
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -23,6 +23,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await createLeague(parsed.data, session.user.id);
+  // rosterSize is not part of the public request schema (see schema.ts's
+  // PRODUCT_ROSTER_SIZE comment) — every league created through this route
+  // gets the current product's fixed 15-round draft length.
+  const result = await createLeague(
+    { ...parsed.data, rosterSize: PRODUCT_ROSTER_SIZE },
+    session.user.id,
+  );
   return Response.json(result, { status: 201 });
 }

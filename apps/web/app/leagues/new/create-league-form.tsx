@@ -18,7 +18,6 @@ export function CreateLeagueForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: formData.get("name"),
-        rosterSize: Number(formData.get("rosterSize")),
         teamCount: Number(formData.get("teamCount")),
         timerSeconds: Number(formData.get("timerSeconds")),
         scoringFormat: formData.get("scoringFormat"),
@@ -43,12 +42,7 @@ export function CreateLeagueForm() {
             <input name="name" required />
           </label>
         </div>
-        <div>
-          <label>
-            Roster size
-            <input name="rosterSize" type="number" defaultValue={16} min={8} max={25} />
-          </label>
-        </div>
+        <p>Drafts are 15 rounds.</p>
         <div>
           <label>
             Team count

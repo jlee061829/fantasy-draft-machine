@@ -12,18 +12,19 @@ interface StartDraftFormProps {
 
 type StartStatus = "idle" | "pending" | "error";
 
-// Mirrors league-settings-form.tsx's fetch/useState/useRouter shape, but
-// deliberately does not reuse its JSON.stringify(body)-to-<pre> error
-// pattern: Milestone 4.1 asks for user-facing copy instead of a raw
-// implementation dump. Errors are mapped by HTTP status only (see
-// mapStatusToMessage) — the POST /api/leagues/[leagueId]/draft endpoint
-// returns the same 409 for two distinct causes (DraftAlreadyExistsError vs
-// LeagueNotFullError) with no structured code to tell them apart, so this
-// deliberately does not try to guess which one occurred from the response
-// body. Instead it shows a generic "state changed" message and calls
-// router.refresh() so the server component re-fetches getLeagueDetail and
-// the page re-renders into whatever is now actually true (e.g. a
-// concurrent start elsewhere flips this into the "draft exists" branch).
+// Moved here from the league-detail page in Milestone 4.5: Start Draft now
+// lives on the pre-draft page (/leagues/[leagueId]/draft) alongside the
+// board/order/players a commissioner is actually looking at, rather than on
+// the separate league-settings-ish detail page. The POST target and
+// server-side authorization/transaction behavior are unchanged from
+// Milestone 4.1 — only where this control is rendered, and where a
+// successful start navigates to, have changed.
+//
+// mapStatusToMessage is unchanged from 4.1: the POST /api/leagues/[leagueId]/draft
+// endpoint still returns the same ambiguous 409 for two distinct causes
+// (DraftAlreadyExistsError vs LeagueNotFullError) with no structured code to
+// tell them apart, so this still shows a generic "state changed" message and
+// calls router.refresh() rather than guessing which one occurred.
 function mapStatusToMessage(status: number): string {
   switch (status) {
     case 401:
@@ -59,7 +60,12 @@ export function StartDraftForm({ leagueId, isFull, membersCount, teamCount }: St
       return;
     }
 
-    router.push(`/leagues/${leagueId}/draft`);
+    // Milestone 4.5: the commissioner who just started the draft goes
+    // straight into the live room — no extra "Join Draft Room" click for
+    // the person who just performed the start. Other members see the Join
+    // Draft Room action appear on this same pre-draft page once they
+    // navigate/refresh here (see page.tsx's ACTIVE branch).
+    router.push(`/leagues/${leagueId}/draft/room`);
   }
 
   if (!isFull) {

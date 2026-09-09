@@ -41,18 +41,29 @@ describe("updateLeagueSettings", () => {
     const result = await updateLeagueSettings(league.id, { name: "Renamed League" }, owner.id);
     expect(result.league.name).toBe("Renamed League");
 
-    await updateLeagueSettings(league.id, { rosterSize: 20 }, owner.id);
     await updateLeagueSettings(league.id, { timerSeconds: 90 }, owner.id);
     await updateLeagueSettings(league.id, { scoringFormat: "STANDARD" }, owner.id);
     const final = await updateLeagueSettings(league.id, { draftType: "LINEAR" }, owner.id);
 
     expect(final.league).toMatchObject({
       name: "Renamed League",
-      rosterSize: 20,
       timerSeconds: 90,
       scoringFormat: "STANDARD",
       draftType: "LINEAR",
     });
+  });
+
+  // Milestone 4.5 product rule: draft length is fixed, so rosterSize is not
+  // part of UpdateLeagueSettingsInput at all anymore — there is no PATCH
+  // path that can change it, unlike every other editable field above.
+  it("has no way to change rosterSize through settings (not part of the input type)", async () => {
+    const owner = await createTestUser();
+    const { league } = await createTestLeague(owner.id);
+
+    await updateLeagueSettings(league.id, { name: "Still 16 Rounds" }, owner.id);
+
+    const unchanged = await prisma.league.findUnique({ where: { id: league.id } });
+    expect(unchanged?.rosterSize).toBe(16);
   });
 
   it("lets the owner update multiple fields in one call", async () => {

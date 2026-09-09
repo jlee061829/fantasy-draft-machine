@@ -577,6 +577,42 @@ Last updated: September 2026
   - no jsdom/React Testing Library was introduced; `DraftRoomClient`'s actual click→emit→ack→state wiring remains manually/Phase-3-suite verified, consistent with the existing precedent for the other draft-room client components
   - manual verification, using the one legitimate development OAuth identity and no fabricated users/leagues, confirmed: the Available Players panel still renders correctly, a Draft action appears on each row, Draft actions stay disabled in the no-Draft state, the raw player-ID debug form is gone, search/filter behavior is unaffected, connection-state gating (disabled while not connected) works, and socket server stop/restart still resyncs correctly with no unexpected console/runtime errors beyond the expected temporary connection errors during deliberate server shutdown
   - a successful real pick flow, multi-manager turn-based enable/disable, and live rejection-error paths remain automated-only, since the development database still has only one legitimate OAuth identity and no legitimate ACTIVE draft; these remain covered by the existing Phase 3 real-Postgres/real-socket suites plus 4.4's own pure-helper tests
+- Phase 4 Milestone 4.5 — Pre-Draft Experience + Live Draft Room:
+  - split the previously combined `/leagues/[leagueId]/draft` page into two routes: `/leagues/[leagueId]/draft` (stable pre-draft/draft-summary page) and `/leagues/[leagueId]/draft/room` (live draft room)
+  - `/leagues/[leagueId]/draft` never opens a Socket.IO connection; before a Draft exists it renders draft settings, draft order (members in `draftSlot` order), the full empty draft board, a read-only Available Players panel, and the commissioner's Start Draft control
+  - once the Draft is `ACTIVE`, `/leagues/[leagueId]/draft` renders a compact "Draft in progress" summary plus a **Join Draft Room** link into `/draft/room`; once `COMPLETE`, a compact "Draft complete" summary plus a **View Draft Room** link
+  - `/leagues/[leagueId]/draft/room` redirects back to `/leagues/[leagueId]/draft` (via `redirect()`) when no Draft exists yet; otherwise it renders the existing `DraftRoomClient` unchanged, using the existing SocketTicket → `draft:join` → reconnect/resync → pick-submission flow exactly as it worked before this milestone
+  - **Join Draft Room** is navigation only, not a second membership concept — the user is already a `LeagueMember`; no new "draft-room membership" table/model was introduced; joining the live room is still fresh SocketTicket → Socket.IO connect → `draft:join`
+  - **Start Draft** (commissioner-only, `POST /api/leagues/[leagueId]/draft`) and **Join Draft Room** (navigation) remain semantically distinct; Start Draft's server-side authorization/transaction behavior is unchanged from Milestone 3.1/4.1
+  - `StartDraftForm` moved from the league-detail directory to `apps/web/app/leagues/[leagueId]/draft/start-draft-form.tsx`; a successful start now navigates directly into `/leagues/[leagueId]/draft/room` instead of back to the pre-draft page, since the commissioner who just started the draft should land directly in the live room
+  - `/leagues/[leagueId]` (league detail) simplified: its Draft section is now a single stable "View Draft" link into `/leagues/[leagueId]/draft` for every role and every Draft state; the old three-branch (no-Draft-commissioner / no-Draft-member / Draft-exists) `StartDraftForm`-owning block was removed — all of that branching now lives exclusively on the pre-draft page
+  - commissioner status on the pre-draft page is determined by `getLeagueDetail(...).league.ownerId === currentUserId` — the same authority source every other commissioner-only UI in this app already uses; never inferred from `draftSlot` or from `DraftStateResult`. This is presentation-only: `startDraft`'s own server-side owner authorization remains the actual authoritative check
+  - `getLeagueDetail`'s `draft` field widened from `{ id: string } | null` to `{ id: string; status: DraftStatus } | null` — a purely web-only DTO change (this DTO is built directly from Prisma in `apps/web`, never crosses into `@fdm/shared` or the socket transport) — so the pre-draft page can distinguish ACTIVE/COMPLETE using its one existing query, with no second `getDraftState` call
+  - added one shared, pure `deriveDraftBoard(state: DraftStateResult)` (`apps/web/app/leagues/[leagueId]/draft/draft-board-helpers.ts`) reused unmodified by both the pre-draft page and the live room — no second board-geometry implementation exists
+  - board rows come from `state.league.rosterSize`, columns are the fixed `draftSlot` order (columns never reverse), and cell-slot mapping reuses the existing shared `getPickerForPickNumber` — no engine-level literal `15` and no duplicated snake/linear arithmetic were introduced anywhere in the board
+  - completed board cells are populated only from authoritative `state.picks`; the current-pick cell highlights only while `status === "ACTIVE"`, derived from `currentPickNumber`; player metadata for a cell (`playerName`/`playerPosition`/`playerNflTeam`) comes directly from `DraftStatePick`, never from the separate 4.3 rostered-only `AvailablePlayer` pool
+  - the pre-draft page's empty board is produced by feeding `deriveDraftBoard` a locally-constructed `DraftStateResult`-shaped value (built from the same `getLeagueDetail` fields already fetched, with `draft: null` and `picks: []`) — not a second query and not a second geometry implementation
+  - added shared, pure `deriveTeamRosters(state: DraftStateResult)` (`apps/web/app/leagues/[leagueId]/draft/team-roster-helpers.ts`), grouping authoritative `state.picks` by member/user in `state.members`'s existing `draftSlot` order, each roster's picks remaining in their existing `pickNumber` order
+  - added `TeamRosterPanel` (live room only): defaults to the authenticated user's own roster ("My Team") with a simple `<select>` to inspect any other manager's roster — one panel, not every team stacked vertically; no starter/bench concept, no roster-position enforcement
+  - `AvailablePlayersPanel`'s `onDraft`, `canDraft`, and `pendingPlayerId` props are now optional; omitting `onDraft` puts the panel into read-only mode (search/filter/ADP Rank still work, no Action column rendered) for the pre-draft page, while the live room continues supplying all three for the unchanged 4.4 actionable behavior — no second player-list implementation was introduced
+  - live-room layout: `TurnBanner` → full-width `DraftBoard` → a grid row of `AvailablePlayersPanel` (primary) + `TeamRosterPanel` (secondary), using the same existing inline-`style` conventions; no Tailwind or other styling framework was added
+  - 15-round product rule: `rosterSize` remains the domain/database/engine representation of round count — Phase 3 completion (`totalPicks = teamCount * rosterSize`) and autopick logic, and the new board derivation, all continue reading `league.rosterSize`/`state.league.rosterSize` dynamically; no engine-level literal `15` was introduced anywhere
+  - added `PRODUCT_ROSTER_SIZE = 15` in `apps/web/lib/leagues/schema.ts`; `createLeagueInputSchema` no longer has a `rosterSize` field at all (not merely a changed default) — a client that sends one is rejected by `.strict()` exactly like an `ownerId` spoofing attempt
+  - `POST /api/leagues` always injects `rosterSize: PRODUCT_ROSTER_SIZE` before calling `createLeague()`, so every league created through the public API gets the current product's fixed 15-round draft length
+  - `updateLeagueSettingsInputSchema` no longer has a `rosterSize` field either — there is no product/API path to change a League's round count after creation
+  - `create-league-form.tsx` and `league-settings-form.tsx` no longer expose a roster-size input
+  - the service-level `createLeague()` keeps its own `CreateLeagueInput` type (`CreateLeagueApiInput & { rosterSize: number }`), distinct from the public schema-inferred `CreateLeagueApiInput` — internal tests that need a non-15 `rosterSize` for engine/board fixtures keep calling `createLeague()` directly, unaffected; only the public HTTP boundary is fixed
+  - no DB migration was required or performed; `rosterSize` was already a plain, unconstrained `Int` column, so historical League rows with non-15 values (e.g. `16`) continue to work unchanged, using their own stored `rosterSize` everywhere (engine, board, autopick)
+- Milestone 4.5 verification:
+  - `apps/web`: 29 test files / 281 tests passing (up from 261)
+  - `packages/database`: 8 test files / 75 tests passing (unaffected)
+  - `apps/socket-server`: 5 test files / 30 tests passing (unaffected)
+  - workspace-wide typecheck passes
+  - workspace-wide build passes with the required development environment variables loaded; both `/leagues/[leagueId]/draft` and `/leagues/[leagueId]/draft/room` registered as separate routes
+  - new coverage: the 15-round public-contract boundary (public create/update schemas reject `rosterSize`; the create route always persists `15` regardless of request body), legacy non-15 `rosterSize` compatibility at both the pure board-derivation level and the settings-service level, pre-draft page routing/status branches (auth/member gating, no-Draft/ACTIVE/COMPLETE, commissioner full/not-full/non-commissioner), live-room redirect-before-start and render-after-start branches, `deriveDraftBoard` (LINEAR mapping, SNAKE round-boundary reversal with fixed columns, empty pre-draft board, populated live cells, current-pick highlighting restricted to `ACTIVE`, no highlight on `COMPLETE`, autopick-marker passthrough, and a historical non-15 `rosterSize` fixture), `deriveTeamRosters` (grouping, member ordering, pick ordering, empty rosters, multi-round accumulation, autopick passthrough), and the league-detail page's single stable View Draft link across commissioner/non-commissioner/Draft-exists states
+  - Docker Postgres/Redis were confirmed running (`docker compose up -d`) before running the suite
+  - manual verification (the one legitimate development OAuth identity, no fabricated users, `teamCount` minimum unrelaxed) confirmed: the league-detail View Draft link works; the pre-draft page loads with correct settings, draft order (with `(you)`/commissioner presentation), and an empty draft board showing correct snake geometry for the real league; read-only Available Players search/filter/ADP Rank work with no Draft action column present; the commissioner Start Draft control shows the correct disabled/waiting state for the underfilled real league; direct navigation to `/leagues/[leagueId]/draft/room` before the draft starts correctly redirects back to `/draft`; no unexpected runtime/console errors were observed beyond a pre-existing, unrelated missing-favicon 404
+  - populated ACTIVE/COMPLETE multi-user live-board and live-roster behavior were not manually reproduced — the development database still has only one legitimate OAuth identity and no legitimate ACTIVE Draft — and remain covered by the automated pure-derivation tests above plus the existing Phase 3 real-Postgres/real-socket suites, consistent with every prior milestone's verification precedent
 
 ### Current phase
 
@@ -591,6 +627,7 @@ Completed:
 - Phase 4 Milestone 4.2 — Draft Room Shell + Live Turn State — COMPLETE
 - Phase 4 Milestone 4.3 — Available Players + Search/Filtering — COMPLETE
 - Phase 4 Milestone 4.4 — Production Pick Submission UX — COMPLETE
+- Phase 4 Milestone 4.5 — Pre-Draft Experience + Live Draft Room — COMPLETE
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -632,8 +669,11 @@ Current Phase 4 capabilities:
 - the draft room at `/leagues/[leagueId]/draft` includes an Available Players panel: a server-fetched, rostered-only (`nflTeam IS NOT NULL`) player pool filtered client-side by case-insensitive partial name search and an `All | QB | RB | WR | TE | K | DEF` position filter, with drafted players excluded via IDs derived from authoritative `state.picks`
 - each Available Players row now has a Draft action wired to the existing Socket.IO `draft:pick` protocol; buttons are gated on draft phase, authoritative turn ownership, connection status, and pending-request state as a UX convenience only, with `submitPick`/PostgreSQL remaining fully authoritative and the temporary raw player-ID debug form removed
 - the Available Players table displays a stable integer ADP Rank — each player's position in the full ADP-sorted pool — instead of the raw decimal ADP, unaffected by search/position filtering
+- pre-draft and live drafting are now two distinct routes: `/leagues/[leagueId]/draft` is a stable, non-realtime pre-draft/draft-summary page (settings, draft order, empty draft board, read-only Available Players, commissioner Start Draft control before a Draft exists; a compact summary + Join/View Draft Room link once one exists), and `/leagues/[leagueId]/draft/room` is the live draft room, the only place Socket.IO ever connects, redirecting back to `/draft` if visited before a Draft exists
+- the draft room now includes a full Draft Board (rows = `rosterSize` rounds, fixed `draftSlot` columns, snake/linear cell mapping via the shared `getPickerForPickNumber`, completed cells from authoritative `state.picks`, current-pick highlighting while `ACTIVE`) and a My Team / roster-inspection panel (defaults to the authenticated user's own roster, with a selector for any other manager), both built from one shared pair of pure derivations (`deriveDraftBoard`, `deriveTeamRosters`) reused unmodified by the pre-draft page's empty board
+- newly created leagues are fixed to a 15-round draft (`PRODUCT_ROSTER_SIZE`); the public create/update contracts no longer accept a `rosterSize` field at all, while `rosterSize` itself remains a fully dynamic engine/database value — historical non-15 leagues, and internal test fixtures that call `createLeague()` directly, are unaffected
 
-Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestones 4.1 — Commissioner Draft Start UI, 4.2 — Draft Room Shell + Live Turn State, 4.3 — Available Players + Search/Filtering, and 4.4 — Production Pick Submission UX are complete. Milestone 4.5 — Draft Board + Team Rosters is the next objective.
+Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) are all complete, and Phase 3 is frozen as a completed foundation the same way Phase 2 was — unless a later phase exposes a concrete defect. Horizontal scalability (Redis pub/sub across multiple socket-server instances) remains explicitly deferred to Phase 5. Phase 4 (client experience) is now in progress against the settled milestone structure in "Build phases" below; Milestones 4.1 — Commissioner Draft Start UI, 4.2 — Draft Room Shell + Live Turn State, 4.3 — Available Players + Search/Filtering, 4.4 — Production Pick Submission UX, and 4.5 — Pre-Draft Experience + Live Draft Room are complete. Milestone 4.6 — Draft Room UX Hardening + Phase 4 Closeout is the next objective.
 
 ### Not yet implemented
 
@@ -642,7 +682,7 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - event replay or more sophisticated reconnect recovery beyond the basic mint-ticket/rejoin/resync mechanism delivered in 3.3b
 - presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup)
 - chat
-- polished draft-board UI (a basic, cosmetic turn countdown shipped in Milestone 4.2, and per-row Draft actions shipped in Milestone 4.4 — see Milestone 4.5 for the draft board itself)
+- broader draft-room visual polish beyond the functional Draft Board shipped in Milestone 4.5 — responsive refinement, sticky panels, board coloring by position, animations, and accessibility polish remain Milestone 4.6 scope
 - hardening the rare ack-success/`draft:state`-broadcast-failure edge in pick-submission UX, where a pick could commit and ack successfully but its subsequent broadcast is lost while the socket stays connected, leaving client pending state stuck (deferred to Milestone 4.6 — see Milestone 4.4's completed-work notes)
 - pause/resume
 - draft/pick undo
@@ -687,7 +727,7 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - League creator receives `draftSlot = 1`
 - League names are not unique
 - League name validation: trimmed, 1–50 characters
-- League roster size validation: integer 8–25, default 16
+- League roster size validation: integer 8–25, default 16 — **superseded for public input by Milestone 4.5's fixed-15-round product rule**: `rosterSize` is no longer a field the public create/update contracts accept at all (see the `PRODUCT_ROSTER_SIZE` decisions near the end of this list); this original bound remains true only of the internal service-level `createLeague()` parameter used by tests/fixtures
 - League pick timer validation: integer 10–300 seconds, default 60
 - Real-Postgres integration tests use a separate `fantasy_draft_test` database, never the development `fantasy_draft` database
 - Destructive integration-test cleanup must hard-fail unless connected specifically to `fantasy_draft_test`
@@ -831,7 +871,7 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - restart recovery for timer/autopick state comes from rediscovering expired deadlines in Postgres on the next sweep tick, not from reconstructing in-memory timers
 - the basic reconnect/resync mechanism (fresh SocketTicket, reconnect, `draft:join`, authoritative resync) was delivered in 3.3b and required no changes for 3.4; it already reflects any autopick-driven state that occurred while a client was disconnected
 - `/leagues` lists Leagues by `LeagueMember` membership only; League ownership is never queried separately for this purpose
-- Phase 4 milestones are: 4.1 Commissioner Draft Start UI, 4.2 Draft Room Shell + Live Turn State, 4.3 Available Players + Search/Filtering, 4.4 Production Pick Submission UX, 4.5 Draft Board + Team Rosters, 4.6 Draft Room UX Hardening + Phase 4 Closeout
+- Phase 4 milestones are: 4.1 Commissioner Draft Start UI, 4.2 Draft Room Shell + Live Turn State, 4.3 Available Players + Search/Filtering, 4.4 Production Pick Submission UX, 4.5 Pre-Draft Experience + Live Draft Room, 4.6 Draft Room UX Hardening + Phase 4 Closeout
 - Phase 4 pick submission remains server-authoritative and ack/state-driven; the client renders what `draft:state` and pick acknowledgements say rather than applying an optimistic local update that later rolls back
 - `getLeagueDetail` exposes draft existence as `draft: { id: string } | null`; `status` is intentionally not included because Milestone 4.1 only needs existence — extend the DTO later only when a milestone actually needs more
 - `/leagues/[leagueId]` renders draft entry/start state conditionally rather than an unconditional Draft Room link
@@ -882,6 +922,24 @@ Next objective: Phase 3's originally-scoped milestones (3.1–3.4, plus the reco
 - ADP Rank is computed client-side (`computeAdpRanks` in `available-players-helpers.ts`) from the full, unfiltered player pool, never from the currently filtered/searched subset, so a player's rank stays fixed regardless of search or position filtering
 - a player with `adp === null` remains unranked (displays `—`); no ADP Rank is invented for a player with no ADP
 - persisted `PlayerAdp.adp`, server-side available-player ordering, and autopick selection are unaffected by ADP Rank — it is a presentation-only client-side derivation
+- pre-draft planning/viewing and live drafting are two distinct routes: `/leagues/[leagueId]/draft` (stable pre-draft/draft-summary page, never opens Socket.IO) and `/leagues/[leagueId]/draft/room` (live draft room, the only place Socket.IO connects)
+- `/leagues/[leagueId]/draft/room` redirects (server-side `redirect()`) back to `/leagues/[leagueId]/draft` when no Draft exists yet; the pre-draft page never redirects and instead renders one of three bodies in place (no-Draft planning view / ACTIVE summary+Join link / COMPLETE summary+View link) so it stays a stable, bookmarkable URL through every Draft state
+- "Join Draft Room" is navigation into the live room, not a second membership concept — the user is already a `LeagueMember`; no persisted "draft-room membership" table/model exists or is needed; joining the live room still goes through the existing SocketTicket → Socket.IO → `draft:join` flow unchanged
+- "Start Draft" (commissioner-only HTTP mutation) and "Join Draft Room" (navigation) are semantically distinct and never conflated; a successful Start Draft navigates the commissioner directly into `/draft/room`
+- commissioner status for pre-draft page rendering is determined by `getLeagueDetail(...).league.ownerId === currentUserId`, the same authority source every other commissioner-only UI already uses — never inferred from `draftSlot` or from `DraftStateResult`; this is presentation-only, and `startDraft`'s own server-side owner authorization remains the actual authoritative check
+- `getLeagueDetail`'s `draft` field is `{ id: string; status: DraftStatus } | null` (widened from existence-only in Milestone 4.5) — still a web-only DTO, never crossing into `@fdm/shared` or the socket transport
+- `/leagues/[leagueId]` (league detail) exposes a single stable "View Draft" link into `/leagues/[leagueId]/draft` for every role and every Draft state; commissioner Start Draft branching/control lives exclusively on the pre-draft page and is never duplicated on league detail
+- one shared, pure `deriveDraftBoard(state: DraftStateResult)` is the only board-geometry implementation, reused unmodified by the pre-draft page (fed a locally-constructed `DraftStateResult`-shaped value with `draft: null, picks: []`) and the live room (fed the real authoritative state); rows come from `state.league.rosterSize`, columns are the fixed `draftSlot` order and never reverse, and cell-slot mapping reuses the existing shared `getPickerForPickNumber`
+- completed board cells come only from authoritative `state.picks`; the current-pick cell highlights only while `status === "ACTIVE"`, derived from `currentPickNumber`; cell player metadata comes directly from `DraftStatePick`, never joined against the separate 4.3 rostered-only `AvailablePlayer` discovery pool
+- one shared, pure `deriveTeamRosters(state: DraftStateResult)` groups authoritative `state.picks` by member/user in `state.members`'s existing `draftSlot` order; the live room's roster panel defaults to the authenticated user's own roster with a simple selector for any other manager, rather than stacking every team's roster at once; no starter/bench concept and no roster-position enforcement exist
+- `AvailablePlayersPanel`'s `onDraft`/`canDraft`/`pendingPlayerId` props are optional; omitting `onDraft` is what puts the panel into read-only mode (no Action column) for the pre-draft page, while the live room continues supplying all three unchanged from Milestone 4.4 — there is exactly one player-list implementation, not two
+- current product behavior: newly created leagues are fixed to a 15-round draft via `PRODUCT_ROSTER_SIZE = 15` in `apps/web/lib/leagues/schema.ts`
+- the public `createLeagueInputSchema` and `updateLeagueSettingsInputSchema` no longer have a `rosterSize` field at all — a client that sends one is rejected by `.strict()` exactly like an `ownerId` spoofing attempt, not range-validated
+- `POST /api/leagues` always injects `rosterSize: PRODUCT_ROSTER_SIZE` before calling `createLeague()`; there is no product/API path to set or later change a League's round count
+- `create-league-form.tsx` and `league-settings-form.tsx` expose no roster-size input
+- the service-level `createLeague()` retains its own broader `CreateLeagueInput` type (`CreateLeagueApiInput & { rosterSize: number }`) distinct from the public schema-inferred type, so internal tests/fixtures needing a non-15 `rosterSize` keep calling it directly, unaffected by the public boundary change
+- `rosterSize` remains the domain/database/engine representation of round count and remains fully dynamic at the engine layer: Phase 3 completion (`totalPicks = teamCount * rosterSize`), autopick, and the Milestone 4.5 board derivation all continue reading `league.rosterSize`/`state.league.rosterSize` — no engine-level literal `15` was introduced, preserving future configurability without exposing it in the current product
+- no DB migration was required for the 15-round product rule; `rosterSize` was already a plain, unconstrained `Int` column, so historical League rows with non-15 values (e.g. `16`) continue to work unchanged using their own stored value
 
 ## Non-negotiable engineering goals
 
@@ -1518,6 +1576,65 @@ still use the older constraint-target parsing assumption and were intentionally 
 
 Fix these in a separate maintenance change rather than silently folding the cleanup into unrelated Phase 3 work.
 
+### Pre-draft page and live draft-room conventions
+
+Pre-draft planning/viewing and live drafting are two distinct routes.
+
+`/leagues/[leagueId]/draft` — stable pre-draft / draft-summary page:
+- never opens a Socket.IO connection
+- before a Draft exists, renders: draft settings (draft type, round count, timer, scoring format), draft order (`state.members`/`LeagueMember` in `draftSlot` order), the full empty draft board, a read-only Available Players panel, and the commissioner's Start Draft control
+- once `ACTIVE`, renders a compact "Draft in progress" summary plus a **Join Draft Room** link into `/draft/room`
+- once `COMPLETE`, renders a compact "Draft complete" summary plus a **View Draft Room** link into `/draft/room`
+- data source is `getLeagueDetail(leagueId, requestingUserId)` alone — no `getDraftState` call is needed, since the DTO already carries league settings, `ownerId`, ordered members, and (as of Milestone 4.5) `draft.status`
+
+`/leagues/[leagueId]/draft/room` — live draft room:
+- if no Draft exists yet, server-side `redirect()`s back to `/leagues/[leagueId]/draft` rather than rendering its own "no Draft" state
+- otherwise renders the existing `DraftRoomClient` unchanged: SocketTicket mint → Socket.IO connect → `draft:join` → authoritative `DraftStateResult` → `draft:pick` submissions → `draft:state` broadcasts → reconnect/resync, all exactly as established in 3.3b/4.2/4.4
+- data source is `getDraftState(leagueId, requestingUserId)`, unchanged from before this milestone
+
+Commissioner detection on the pre-draft page:
+- `getLeagueDetail(...).league.ownerId === currentUserId`
+- never inferred from `draftSlot` or from `DraftStateResult`
+- presentation-only — `startDraft`'s own server-side owner authorization (via `authorizeLeagueOwner`) remains the actual authoritative check regardless of what the pre-draft page renders
+
+"Start Draft" vs "Join Draft Room":
+- Start Draft is the existing commissioner-only `POST /api/leagues/[leagueId]/draft` mutation; unchanged authorization/transaction behavior
+- Join Draft Room is navigation only — the user is already a `LeagueMember`; there is no second "draft-room membership" concept, table, or model
+- a successful Start Draft navigates the commissioner directly into `/draft/room`; other members see the Join Draft Room link appear on `/draft` the next time they load/refresh it (the pre-draft page has no realtime subscription of its own — this is an accepted limitation, not a defect, since it can only under-inform, never mislead)
+
+Shared Draft Board:
+- one pure derivation, `deriveDraftBoard(state: DraftStateResult)`, reused unmodified by both routes
+- rows = `state.league.rosterSize`; columns = the fixed `draftSlot` order (never reversed); cell-slot mapping reuses the existing shared `getPickerForPickNumber` — no second snake/linear implementation
+- completed cells come only from authoritative `state.picks`; the current-pick cell highlights only while `status === "ACTIVE"`, derived from `currentPickNumber`
+- cell player metadata (`playerName`/`playerPosition`/`playerNflTeam`, `wasAutopick`) comes directly from `DraftStatePick` — never joined against the separate, web-only, rostered-only (4.3) `AvailablePlayer` discovery pool
+- the pre-draft page's empty board is the same function fed a locally-constructed `DraftStateResult`-shaped value (`draft: null, picks: []`) built from the already-fetched `getLeagueDetail` fields — no second query, no second geometry implementation
+
+Shared rosters / My Team:
+- one pure derivation, `deriveTeamRosters(state: DraftStateResult)`, groups authoritative `state.picks` by member/user in `state.members`'s existing `draftSlot` order, each roster's own picks staying in their existing `pickNumber` order
+- the live room's roster panel defaults to the authenticated user's own roster with a simple selector to inspect any other manager — one panel, not every team stacked vertically
+- no starter/bench concept and no roster-position enforcement
+
+Available Players reuse:
+- `AvailablePlayersPanel`'s `onDraft`, `canDraft`, and `pendingPlayerId` props are optional
+- omitting `onDraft` puts the panel into read-only mode: search/filter/ADP Rank all still work, but no Action column is rendered and no pick can be submitted
+- the pre-draft page uses read-only mode; the live room continues supplying all three props for the unchanged Milestone 4.4 actionable behavior (Draft buttons, pending state, drafted-player removal from authoritative `state.picks`)
+- there is exactly one player-list implementation, not two
+
+### Draft length / rosterSize product conventions
+
+`rosterSize` (round count) remains the domain/database/engine representation — it is a plain, unconstrained `Int` column, and every engine consumer (`submitPick`'s `totalPicks = teamCount * rosterSize`, autopick, and the Milestone 4.5 `deriveDraftBoard`) reads it dynamically off the League/`DraftStateResult`. No engine-level literal `15` exists anywhere.
+
+Current product decision (Milestone 4.5): newly created leagues are fixed to a 15-round draft, and round count is not user-configurable through the product today.
+
+- `PRODUCT_ROSTER_SIZE = 15`, defined in `apps/web/lib/leagues/schema.ts`
+- the public `createLeagueInputSchema` has no `rosterSize` field — sending one is a `400` (unrecognized field), not a range-validation failure
+- `POST /api/leagues` always supplies `rosterSize: PRODUCT_ROSTER_SIZE` to `createLeague()`
+- the public `updateLeagueSettingsInputSchema` has no `rosterSize` field either — there is no product/API path to change round count after creation
+- `create-league-form.tsx` and `league-settings-form.tsx` expose no roster-size input
+- the service-level `createLeague(input: CreateLeagueInput, ownerId)` still accepts an explicit `rosterSize` — `CreateLeagueInput` (`apps/web/lib/leagues/create-league.ts`) is `CreateLeagueApiInput & { rosterSize: number }`, deliberately distinct from the public schema-inferred `CreateLeagueApiInput`. Internal tests/fixtures needing a non-15 `rosterSize` (e.g. for faster concurrency tests) call `createLeague()` directly, unaffected by the public boundary
+- no DB migration was required or performed; historical League rows with non-15 `rosterSize` (e.g. `16`) continue to work unchanged, rendering their own correct board/round geometry and engine behavior
+- this design keeps the architecture capable of reintroducing product-level configurability later without any engine change — only the input boundary (schema + forms) would need to change again
+
 ## Data model
 
 Prisma schema, roughly:
@@ -1702,8 +1819,8 @@ Milestones:
 - **4.2 Draft Room Shell + Live Turn State — COMPLETE**
 - **4.3 Available Players + Search/Filtering — COMPLETE**
 - **4.4 Production Pick Submission UX — COMPLETE**
-- **4.5 Draft Board + Team Rosters — NEXT**
-- **4.6 Draft Room UX Hardening + Phase 4 Closeout**
+- **4.5 Pre-Draft Experience + Live Draft Room — COMPLETE**
+- **4.6 Draft Room UX Hardening + Phase 4 Closeout — NEXT**
 
 *Done when: it feels responsive and nothing desyncs or flickers.*
 

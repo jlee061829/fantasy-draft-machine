@@ -5,7 +5,6 @@ import { cleanupLeagueTestData, createTestUser } from "@fdm/database/test-suppor
 import { createLeague } from "../../../lib/leagues/create-league";
 import { startDraft } from "../../../lib/drafts/start-draft";
 import LeagueDetailPage from "./page";
-import { StartDraftForm } from "./start-draft-form";
 
 const authMock = vi.fn();
 
@@ -137,7 +136,15 @@ describe("LeagueDetailPage", () => {
     expect(notFoundMock).not.toHaveBeenCalled();
   });
 
-  it("renders a disabled Start Draft control for the commissioner when the league is not full", async () => {
+  // Milestone 4.5: the Draft section of this page collapsed from a
+  // three-branch (no-Draft-commissioner / no-Draft-member / Draft-exists)
+  // StartDraftForm-owning block into a single stable "View Draft" link —
+  // all of that branching now lives exclusively on the pre-draft page at
+  // /leagues/[leagueId]/draft (see its own page.test.ts). These tests
+  // replace the old StartDraftForm-presence assertions with the one
+  // invariant this page now owns: the link is always present, for any role,
+  // regardless of Draft existence.
+  it("renders a stable View Draft link for the commissioner regardless of league fullness", async () => {
     const owner = await createTestUser();
     authMock.mockResolvedValue({ user: { id: owner.id } });
 
@@ -155,36 +162,13 @@ describe("LeagueDetailPage", () => {
 
     const page = await LeagueDetailPage({ params: paramsFor(league.id) });
 
-    const starters = findElementsByType(page, StartDraftForm);
-    expect(starters).toHaveLength(1);
-    expect(starters[0].props.isFull).toBe(false);
-  });
-
-  it("renders an enabled Start Draft control for the commissioner when the league is full", async () => {
-    const owner = await createTestUser();
-    authMock.mockResolvedValue({ user: { id: owner.id } });
-
-    const { league } = await createLeague(
-      {
-        name: "Page Test League",
-        rosterSize: 16,
-        teamCount: 4,
-        timerSeconds: 60,
-        scoringFormat: "PPR",
-        draftType: "SNAKE",
-      },
-      owner.id,
+    const links = findElementsByType(page, Link).filter(
+      (link) => link.props.href === `/leagues/${league.id}/draft`,
     );
-    await fillRemainingSlots(league.id, 4);
-
-    const page = await LeagueDetailPage({ params: paramsFor(league.id) });
-
-    const starters = findElementsByType(page, StartDraftForm);
-    expect(starters).toHaveLength(1);
-    expect(starters[0].props.isFull).toBe(true);
+    expect(links).toHaveLength(1);
   });
 
-  it("does not render a Start Draft control for a non-commissioner member", async () => {
+  it("renders the same stable View Draft link for a non-commissioner member", async () => {
     const owner = await createTestUser();
     const joiner = await createTestUser();
     authMock.mockResolvedValue({ user: { id: joiner.id } });
@@ -206,10 +190,13 @@ describe("LeagueDetailPage", () => {
 
     const page = await LeagueDetailPage({ params: paramsFor(league.id) });
 
-    expect(findElementsByType(page, StartDraftForm)).toHaveLength(0);
+    const links = findElementsByType(page, Link).filter(
+      (link) => link.props.href === `/leagues/${league.id}/draft`,
+    );
+    expect(links).toHaveLength(1);
   });
 
-  it("renders a link into the draft room instead of a Start Draft control once a Draft exists", async () => {
+  it("renders the same stable View Draft link once a Draft exists", async () => {
     const owner = await createTestUser();
     authMock.mockResolvedValue({ user: { id: owner.id } });
 
@@ -229,7 +216,6 @@ describe("LeagueDetailPage", () => {
 
     const page = await LeagueDetailPage({ params: paramsFor(league.id) });
 
-    expect(findElementsByType(page, StartDraftForm)).toHaveLength(0);
     const links = findElementsByType(page, Link).filter(
       (link) => link.props.href === `/leagues/${league.id}/draft`,
     );

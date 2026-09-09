@@ -157,6 +157,6 @@ describe("getLeagueDetail", () => {
     const { draft } = await startDraft(league.id, owner.id);
     const result = await getLeagueDetail(league.id, owner.id);
 
-    expect(result?.draft).toEqual({ id: draft.id });
+    expect(result?.draft).toEqual({ id: draft.id, status: "ACTIVE" });
   });
 });

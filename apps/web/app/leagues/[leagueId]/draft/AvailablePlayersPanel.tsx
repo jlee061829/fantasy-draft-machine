@@ -18,9 +18,15 @@ const POSITIONS: readonly string[] = ["QB", "RB", "WR", "TE", "K", "DEF"];
 interface AvailablePlayersPanelProps {
   players: AvailablePlayer[];
   draftedPlayerIds: Set<string>;
-  canDraft: boolean;
-  pendingPlayerId: string | null;
-  onDraft: (playerId: string) => void;
+  // Milestone 4.5: all three are optional so the pre-draft page can reuse
+  // this exact component in a read-only mode (search/filter/ADP Rank only,
+  // no Action column) instead of a second player-list implementation.
+  // Omitting onDraft is what actually drives read-only mode — canDraft/
+  // pendingPlayerId are meaningless without it and are ignored if somehow
+  // provided without it.
+  canDraft?: boolean;
+  pendingPlayerId?: string | null;
+  onDraft?: (playerId: string) => void;
 }
 
 // Milestone 4.3: read-only player discovery. Owns its own search/position
@@ -97,7 +103,7 @@ export function AvailablePlayersPanel({
                 <th style={{ padding: "4px 8px" }}>Pos</th>
                 <th style={{ padding: "4px 8px" }}>Team</th>
                 <th style={{ padding: "4px 8px" }}>ADP Rank</th>
-                <th style={{ padding: "4px 8px" }}></th>
+                {onDraft && <th style={{ padding: "4px 8px" }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -107,11 +113,17 @@ export function AvailablePlayersPanel({
                   <td style={{ padding: "4px 8px" }}>{player.position}</td>
                   <td style={{ padding: "4px 8px" }}>{player.nflTeam}</td>
                   <td style={{ padding: "4px 8px" }}>{adpRanks.get(player.id) ?? "—"}</td>
-                  <td style={{ padding: "4px 8px" }}>
-                    <button type="button" disabled={!canDraft} onClick={() => onDraft(player.id)}>
-                      {pendingPlayerId === player.id ? "Drafting…" : "Draft"}
-                    </button>
-                  </td>
+                  {onDraft && (
+                    <td style={{ padding: "4px 8px" }}>
+                      <button
+                        type="button"
+                        disabled={!canDraft}
+                        onClick={() => onDraft(player.id)}
+                      >
+                        {pendingPlayerId === player.id ? "Drafting…" : "Draft"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

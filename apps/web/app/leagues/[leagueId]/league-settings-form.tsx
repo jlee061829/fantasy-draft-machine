@@ -7,7 +7,6 @@ interface LeagueSettingsFormProps {
   leagueId: string;
   settings: {
     name: string;
-    rosterSize: number;
     teamCount: number;
     timerSeconds: number;
     scoringFormat: string;
@@ -37,7 +36,6 @@ export function LeagueSettingsForm({ leagueId, settings }: LeagueSettingsFormPro
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: formData.get("name"),
-        rosterSize: Number(formData.get("rosterSize")),
         teamCount: Number(formData.get("teamCount")),
         timerSeconds: Number(formData.get("timerSeconds")),
         scoringFormat: formData.get("scoringFormat"),
@@ -61,18 +59,6 @@ export function LeagueSettingsForm({ leagueId, settings }: LeagueSettingsFormPro
           <label>
             Name
             <input name="name" defaultValue={settings.name} required />
-          </label>
-        </div>
-        <div>
-          <label>
-            Roster size
-            <input
-              name="rosterSize"
-              type="number"
-              defaultValue={settings.rosterSize}
-              min={8}
-              max={25}
-            />
           </label>
         </div>
         <div>

@@ -1,7 +1,19 @@
 import type { DraftType, ScoringFormat } from "@fdm/database";
 import { Prisma, prisma } from "@fdm/database";
 import { generateInviteCode } from "./invite-code";
-import type { CreateLeagueInput } from "./schema";
+import type { CreateLeagueApiInput } from "./schema";
+
+// Service-level input, distinct from the public HTTP contract
+// (CreateLeagueApiInput, parsed from an untrusted request body by
+// createLeagueInputSchema). rosterSize is deliberately NOT part of that
+// public schema (Milestone 4.5's fixed-15-round product rule — see
+// schema.ts's PRODUCT_ROSTER_SIZE), but this service function still accepts
+// it explicitly: the route handler always supplies PRODUCT_ROSTER_SIZE for
+// real requests, while tests that need a non-15 rosterSize for engine/board
+// fixture purposes keep calling this function directly with whatever value
+// they need — rosterSize stays fully dynamic at the service/domain/DB layer,
+// only the public input boundary is fixed.
+export type CreateLeagueInput = CreateLeagueApiInput & { rosterSize: number };
 
 export interface CreateLeagueResult {
   league: {

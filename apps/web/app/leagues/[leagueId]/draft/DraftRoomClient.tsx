@@ -10,6 +10,7 @@ import { io, type Socket } from "socket.io-client";
 import type { AvailablePlayer } from "../../../../lib/players/get-available-players";
 import { AvailablePlayersPanel } from "./AvailablePlayersPanel";
 import { ConnectionStatusBadge, type ConnectionStatus } from "./ConnectionStatusBadge";
+import { DraftBoard } from "./DraftBoard";
 import {
   getCurrentPickerName,
   getDraftedPlayerIds,
@@ -18,6 +19,7 @@ import {
   isYourTurn,
 } from "./draft-room-helpers";
 import { canSubmitPick, mapPickErrorToMessage } from "./pick-submission-helpers";
+import { TeamRosterPanel } from "./TeamRosterPanel";
 import { TurnBanner } from "./TurnBanner";
 
 const SOCKET_SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_SERVER_URL ?? "http://localhost:4000";
@@ -263,7 +265,7 @@ export function DraftRoomClient({
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
+    <main style={{ maxWidth: 1100, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
       <header
         style={{
           display: "flex",
@@ -300,46 +302,25 @@ export function DraftRoomClient({
         />
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <section>
-          <h2>Members</h2>
-          <ol>
-            {state.members.map((member) => (
-              <li key={member.membershipId}>
-                Slot {member.draftSlot}: {member.name}
-                {member.userId === currentUserId ? " (you)" : ""}
-                {state.draft?.currentUserId === member.userId ? " — on the clock" : ""}
-              </li>
-            ))}
-          </ol>
-        </section>
+      <section style={{ marginBottom: 16 }}>
+        <h2>Draft Board</h2>
+        <DraftBoard state={state} />
+      </section>
 
-        <section>
-          <h2>Picks</h2>
-          {state.picks.length === 0 ? (
-            <p>No picks yet.</p>
-          ) : (
-            <ol>
-              {state.picks.map((pick) => (
-                <li key={pick.pickNumber}>
-                  #{pick.pickNumber}: {pick.playerName} ({pick.playerPosition})
-                  {pick.wasAutopick ? " · auto" : ""}
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
+      <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 16, alignItems: "start" }}>
+        <div>
+          <AvailablePlayersPanel
+            players={players}
+            draftedPlayerIds={draftedPlayerIds}
+            canDraft={canDraft}
+            pendingPlayerId={pendingPlayerId}
+            onDraft={handleDraftPlayer}
+          />
+          {pickError && <p style={{ color: "#cf222e", marginTop: 8 }}>{pickError}</p>}
+        </div>
+
+        <TeamRosterPanel state={state} currentUserId={currentUserId} />
       </div>
-
-      <AvailablePlayersPanel
-        players={players}
-        draftedPlayerIds={draftedPlayerIds}
-        canDraft={canDraft}
-        pendingPlayerId={pendingPlayerId}
-        onDraft={handleDraftPlayer}
-      />
-
-      {pickError && <p style={{ color: "#cf222e", marginTop: 8 }}>{pickError}</p>}
     </main>
   );
 }

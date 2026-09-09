@@ -9,7 +9,6 @@ import {
 function validInput(overrides: Record<string, unknown> = {}) {
   return {
     name: "Test League",
-    rosterSize: 16,
     teamCount: 12,
     timerSeconds: 60,
     scoringFormat: "PPR",
@@ -23,16 +22,25 @@ describe("createLeagueInputSchema", () => {
     expect(createLeagueInputSchema.safeParse(validInput()).success).toBe(true);
   });
 
-  it("applies default rosterSize, teamCount, and timerSeconds when omitted", () => {
+  it("applies default teamCount and timerSeconds when omitted", () => {
     const { name, scoringFormat, draftType } = validInput();
     const result = createLeagueInputSchema.safeParse({ name, scoringFormat, draftType });
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.rosterSize).toBe(16);
       expect(result.data.teamCount).toBe(12);
       expect(result.data.timerSeconds).toBe(60);
     }
+  });
+
+  // Milestone 4.5 product rule: draft length is fixed (see schema.ts's
+  // PRODUCT_ROSTER_SIZE) and rosterSize is no longer part of the public
+  // create-league contract at all — attempting to send it is rejected the
+  // same way an ownerId/userId spoofing attempt is, not range-validated.
+  it("rejects an otherwise-valid input containing rosterSize", () => {
+    expect(createLeagueInputSchema.safeParse(validInput({ rosterSize: 15 })).success).toBe(
+      false,
+    );
   });
 
   it.each(["", "   "])("rejects a blank name (%j)", (name) => {
@@ -43,12 +51,6 @@ describe("createLeagueInputSchema", () => {
     expect(
       createLeagueInputSchema.safeParse(validInput({ name: "a".repeat(51) })).success,
     ).toBe(false);
-  });
-
-  it.each([7, 26, 0, -1, 1.5])("rejects out-of-range rosterSize %s", (rosterSize) => {
-    expect(createLeagueInputSchema.safeParse(validInput({ rosterSize })).success).toBe(
-      false,
-    );
   });
 
   it.each([3, 21, 0, -1, 1.5])("rejects out-of-range teamCount %s", (teamCount) => {
@@ -139,9 +141,17 @@ describe("updateLeagueSettingsInputSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toEqual({ name: "New Name" });
-      expect("rosterSize" in result.data).toBe(false);
       expect("teamCount" in result.data).toBe(false);
     }
+  });
+
+  // Milestone 4.5 product rule: draft length is fixed and rosterSize is not
+  // a settings-mutable field at all — same treatment as an ownerId spoofing
+  // attempt, not a range-validated field.
+  it("rejects an otherwise-valid input containing rosterSize", () => {
+    expect(
+      updateLeagueSettingsInputSchema.safeParse({ name: "New Name", rosterSize: 15 }).success,
+    ).toBe(false);
   });
 
   it("rejects an empty update object", () => {
@@ -158,10 +168,6 @@ describe("updateLeagueSettingsInputSchema", () => {
       expect(result.success).toBe(false);
     },
   );
-
-  it.each([7, 26, 1.5])("rejects out-of-range rosterSize %s", (rosterSize) => {
-    expect(updateLeagueSettingsInputSchema.safeParse({ rosterSize }).success).toBe(false);
-  });
 
   it.each([3, 21, 1.5])("rejects out-of-range teamCount %s", (teamCount) => {
     expect(updateLeagueSettingsInputSchema.safeParse({ teamCount }).success).toBe(false);

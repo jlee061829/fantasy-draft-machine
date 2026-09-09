@@ -60,7 +60,6 @@ export async function updateLeagueSettings(
       where: { id: leagueId },
       data: {
         ...(input.name !== undefined && { name: input.name }),
-        ...(input.rosterSize !== undefined && { rosterSize: input.rosterSize }),
         ...(input.teamCount !== undefined && { teamCount: input.teamCount }),
         ...(input.timerSeconds !== undefined && { timerSeconds: input.timerSeconds }),
         ...(input.scoringFormat !== undefined && { scoringFormat: input.scoringFormat }),

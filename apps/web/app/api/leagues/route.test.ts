@@ -20,7 +20,6 @@ function jsonRequest(body: unknown) {
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
     name: "Route Test League",
-    rosterSize: 16,
     teamCount: 12,
     timerSeconds: 60,
     scoringFormat: "PPR",
@@ -52,7 +51,20 @@ describe("POST /api/leagues", () => {
     const user = await createTestUser();
     authMock.mockResolvedValue({ user: { id: user.id } });
 
-    const response = await POST(jsonRequest(validBody({ rosterSize: 999 })));
+    const response = await POST(jsonRequest(validBody({ teamCount: 999 })));
+
+    expect(response.status).toBe(400);
+    expect(await prisma.league.count()).toBe(0);
+  });
+
+  // Milestone 4.5: rosterSize is no longer part of the public create-league
+  // contract at all (see lib/leagues/schema.ts's PRODUCT_ROSTER_SIZE) —
+  // sending it is rejected the same way an ownerId spoofing attempt is.
+  it("rejects a request that attempts to specify rosterSize with 400 and creates nothing", async () => {
+    const user = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: user.id } });
+
+    const response = await POST(jsonRequest(validBody({ rosterSize: 8 })));
 
     expect(response.status).toBe(400);
     expect(await prisma.league.count()).toBe(0);
@@ -78,6 +90,10 @@ describe("POST /api/leagues", () => {
     expect(response.status).toBe(201);
     expect(body.league.ownerId).toBe(user.id);
     expect(body.league.teamCount).toBe(12);
+    // Milestone 4.5: every league created through the public API gets the
+    // current product's fixed 15-round draft length, regardless of request
+    // body content (rosterSize isn't even an accepted field — see above).
+    expect(body.league.rosterSize).toBe(15);
     expect(typeof body.league.inviteCode).toBe("string");
     expect(body.league.inviteCode).toHaveLength(8);
     expect(body.membership.draftSlot).toBe(1);

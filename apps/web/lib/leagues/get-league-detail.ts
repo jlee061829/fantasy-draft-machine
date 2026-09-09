@@ -1,4 +1,4 @@
-import type { DraftType, ScoringFormat } from "@fdm/database";
+import type { DraftStatus, DraftType, ScoringFormat } from "@fdm/database";
 import { prisma } from "@fdm/database";
 
 export interface LeagueDetailResult {
@@ -26,11 +26,14 @@ export interface LeagueDetailResult {
     image: string | null;
     draftSlot: number;
   }>;
-  // Existence only — the page's only question is whether to render a
-  // start-draft control or a link into the draft room. Widen this (e.g. to
-  // include `status`) only when a later milestone actually needs more than
-  // existence, per the Milestone 4.1 DTO-minimality decision.
-  draft: { id: string } | null;
+  // Widened in Milestone 4.5 to include `status`: the pre-draft page
+  // (`/leagues/[leagueId]/draft`) needs to distinguish "no Draft yet" from
+  // ACTIVE vs COMPLETE to decide whether to render the pre-draft planning
+  // view or the compact "Join/View Draft Room" state, which existence alone
+  // can't answer. This DTO is web-only (built directly from Prisma in this
+  // file, never crossing into @fdm/shared or the socket transport), so
+  // widening it has no cross-package/protocol impact.
+  draft: { id: string; status: DraftStatus } | null;
 }
 
 // Membership is enforced as part of the query predicate itself — `where`
@@ -65,7 +68,7 @@ export async function getLeagueDetail(
         },
         orderBy: { draftSlot: "asc" },
       },
-      draft: { select: { id: true } },
+      draft: { select: { id: true, status: true } },
     },
   });
 
@@ -98,6 +101,6 @@ export async function getLeagueDetail(
       image: member.user.image,
       draftSlot: member.draftSlot,
     })),
-    draft: league.draft ? { id: league.draft.id } : null,
+    draft: league.draft ? { id: league.draft.id, status: league.draft.status } : null,
   };
 }
