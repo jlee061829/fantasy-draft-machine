@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   DraftAlreadyExistsError,
   LeagueNotAccessibleError,
@@ -5,7 +6,11 @@ import {
   NotLeagueOwnerError,
   prisma,
 } from "@fdm/database";
-import { cleanupLeagueTestData, createTestUser } from "@fdm/database/test-support";
+import {
+  cleanupLeagueTestData,
+  createTestBotMember,
+  createTestUser,
+} from "@fdm/database/test-support";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createLeague } from "../leagues/create-league";
 import { startDraft } from "./start-draft";
@@ -93,7 +98,7 @@ describe("startDraft", () => {
   it("starts a full SNAKE league with the correct first picker and deadline", async () => {
     const owner = await createTestUser();
     const before = Date.now();
-    const { league } = await createTestLeague(owner.id, {
+    const { league, membership: ownerMembership } = await createTestLeague(owner.id, {
       teamCount: 4,
       draftType: "SNAKE",
       timerSeconds: 90,
@@ -105,8 +110,9 @@ describe("startDraft", () => {
     expect(result.draft.status).toBe("ACTIVE");
     expect(result.draft.currentPickNumber).toBe(1);
     // slot 1 is the first picker for pick 1 regardless of draft type, and
-    // the owner holds slot 1 from league creation.
-    expect(result.draft.currentUserId).toBe(owner.id);
+    // the owner holds slot 1 (as their own LeagueMember row) from league
+    // creation.
+    expect(result.draft.currentMemberId).toBe(ownerMembership.id);
 
     const deadline = new Date(result.draft.turnDeadline).getTime();
     expect(deadline).toBeGreaterThanOrEqual(before + 90_000);
@@ -114,13 +120,13 @@ describe("startDraft", () => {
 
     const persisted = await prisma.draft.findUnique({ where: { leagueId: league.id } });
     expect(persisted?.status).toBe("ACTIVE");
-    expect(persisted?.currentUserId).toBe(owner.id);
+    expect(persisted?.currentMemberId).toBe(ownerMembership.id);
     expect(persisted?.currentPickNumber).toBe(1);
   });
 
   it("starts a full LINEAR league with the correct first picker", async () => {
     const owner = await createTestUser();
-    const { league } = await createTestLeague(owner.id, {
+    const { league, membership: ownerMembership } = await createTestLeague(owner.id, {
       teamCount: 4,
       draftType: "LINEAR",
     });
@@ -128,7 +134,7 @@ describe("startDraft", () => {
 
     const result = await startDraft(league.id, owner.id);
 
-    expect(result.draft.currentUserId).toBe(owner.id);
+    expect(result.draft.currentMemberId).toBe(ownerMembership.id);
   });
 
   it("rejects starting a league that already has a draft", async () => {
@@ -141,6 +147,57 @@ describe("startDraft", () => {
 
     const drafts = await prisma.draft.findMany({ where: { leagueId: league.id } });
     expect(drafts).toHaveLength(1);
+  });
+
+  // Phase 5.1: mixed HUMAN/BOT league coverage. No bot-creation service
+  // exists yet, so BOT LeagueMember rows are seeded directly via
+  // createTestBotMember rather than through any product flow.
+  it("starts successfully once BOT LeagueMember rows fill the remaining slots to teamCount", async () => {
+    const owner = await createTestUser();
+    const humanTwo = await createTestUser();
+    const { league } = await createTestLeague(owner.id, { teamCount: 4 });
+    await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: humanTwo.id, draftSlot: 2 },
+    });
+    await createTestBotMember(league.id, 3, { displayName: "CPU 1" });
+    await createTestBotMember(league.id, 4, { displayName: "CPU 2" });
+
+    const result = await startDraft(league.id, owner.id);
+
+    expect(result.draft.status).toBe("ACTIVE");
+    const persisted = await prisma.draft.findUnique({ where: { leagueId: league.id } });
+    expect(persisted?.status).toBe("ACTIVE");
+  });
+
+  it("resolves the first picker to a BOT's own LeagueMember.id when a bot occupies draftSlot 1", async () => {
+    // League.ownerId must still be a real human User — commissioner
+    // authority is unaffected by bot participation (see
+    // authorize-commissioner.ts) — but the owner need not occupy slot 1
+    // themselves once membership is constructed directly rather than
+    // through createLeague()'s automatic slot-1-for-creator behavior.
+    const owner = await createTestUser();
+    const league = await prisma.league.create({
+      data: {
+        name: "Bot First Picker Test League",
+        ownerId: owner.id,
+        rosterSize: 8,
+        teamCount: 2,
+        inviteCode: randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase(),
+        timerSeconds: 60,
+        scoringFormat: "PPR",
+        draftType: "SNAKE",
+      },
+    });
+    const bot = await createTestBotMember(league.id, 1, { displayName: "CPU 1" });
+    await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: owner.id, draftSlot: 2 },
+    });
+
+    const result = await startDraft(league.id, owner.id);
+
+    expect(result.draft.currentMemberId).toBe(bot.id);
+    const persisted = await prisma.draft.findUnique({ where: { leagueId: league.id } });
+    expect(persisted?.currentMemberId).toBe(bot.id);
   });
 
   it("under two simultaneous start attempts, exactly one Draft is created", async () => {

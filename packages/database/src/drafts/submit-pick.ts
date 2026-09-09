@@ -16,7 +16,7 @@ export interface SubmitPickResult {
     id: string;
     draftId: string;
     pickNumber: number;
-    userId: string;
+    leagueMemberId: string;
     playerId: string;
     wasAutopick: boolean;
     createdAt: string;
@@ -24,7 +24,7 @@ export interface SubmitPickResult {
   draft: {
     status: DraftStatus;
     currentPickNumber: number;
-    currentUserId: string | null;
+    currentMemberId: string | null;
     turnDeadline: string | null;
   };
 }
@@ -41,7 +41,11 @@ export interface LockedDraft {
   leagueId: string;
   status: DraftStatus;
   currentPickNumber: number;
-  currentUserId: string | null;
+  // Phase 5.1: renamed from currentUserId. Identifies the LeagueMember
+  // (HUMAN or BOT) currently on the clock, not a User — a bot has no User
+  // row. See schema.prisma's Draft.currentMember for the FK/onDelete
+  // reasoning.
+  currentMemberId: string | null;
   turnDeadline: Date | null;
 }
 
@@ -90,7 +94,7 @@ export async function lockDraftForLeague(
   leagueId: string,
 ): Promise<LockedDraft | null> {
   const [draft] = await tx.$queryRaw<LockedDraft[]>`
-    SELECT id, "leagueId", status, "currentPickNumber", "currentUserId", "turnDeadline"
+    SELECT id, "leagueId", status, "currentPickNumber", "currentMemberId", "turnDeadline"
     FROM "Draft" WHERE "leagueId" = ${leagueId} FOR UPDATE
   `;
   return draft ?? null;
@@ -99,7 +103,9 @@ export async function lockDraftForLeague(
 // Shared by submitPick and processExpiredDraftTurn: the actual Pick
 // insert + completion/advance write, identical regardless of whether the
 // pick was chosen by the requester (manual) or by the autopick selection
-// algorithm (timer-triggered). Callers are responsible for everything
+// algorithm (timer-triggered) — and, as of Phase 5.1, regardless of whether
+// the acting participant is a HUMAN or BOT LeagueMember, since both are
+// just `leagueMemberId` here. Callers are responsible for everything
 // upstream of this — turn-ownership vs. deadline-expiry checks differ
 // between the two paths and are deliberately NOT here, so this function
 // can't be mistaken for a substitute for either caller's own
@@ -112,12 +118,12 @@ export async function applyPick(
   params: {
     draft: LockedDraft;
     league: DraftProgressionLeagueConfig;
-    userId: string;
+    leagueMemberId: string;
     playerId: string;
     wasAutopick: boolean;
   },
 ): Promise<SubmitPickResult> {
-  const { draft, league, userId, playerId, wasAutopick } = params;
+  const { draft, league, leagueMemberId, playerId, wasAutopick } = params;
 
   const player = await tx.player.findUnique({
     where: { id: playerId },
@@ -143,7 +149,7 @@ export async function applyPick(
       data: {
         draftId: draft.id,
         pickNumber: draft.currentPickNumber,
-        userId,
+        leagueMemberId,
         playerId,
         wasAutopick,
       },
@@ -166,7 +172,7 @@ export async function applyPick(
   if (isFinalPick) {
     updatedDraft = await tx.draft.update({
       where: { id: draft.id },
-      data: { status: "COMPLETE", currentUserId: null, turnDeadline: null },
+      data: { status: "COMPLETE", currentMemberId: null, turnDeadline: null },
     });
   } else {
     const nextPickNumber = draft.currentPickNumber + 1;
@@ -185,7 +191,11 @@ export async function applyPick(
       where: { id: draft.id },
       data: {
         currentPickNumber: nextPickNumber,
-        currentUserId: nextPicker.userId,
+        // The next picker's own LeagueMember.id — HUMAN or BOT alike, no
+        // .userId hop needed (a bot has none). This is a real
+        // simplification, not just a rename: the old code read
+        // nextPicker.userId here.
+        currentMemberId: nextPicker.id,
         turnDeadline,
       },
     });
@@ -196,7 +206,7 @@ export async function applyPick(
       id: createdPick.id,
       draftId: createdPick.draftId,
       pickNumber: createdPick.pickNumber,
-      userId: createdPick.userId,
+      leagueMemberId: createdPick.leagueMemberId,
       playerId: createdPick.playerId,
       wasAutopick: createdPick.wasAutopick,
       createdAt: createdPick.createdAt.toISOString(),
@@ -204,23 +214,32 @@ export async function applyPick(
     draft: {
       status: updatedDraft.status,
       currentPickNumber: updatedDraft.currentPickNumber,
-      currentUserId: updatedDraft.currentUserId,
+      currentMemberId: updatedDraft.currentMemberId,
       turnDeadline: updatedDraft.turnDeadline?.toISOString() ?? null,
     },
   };
 }
 
-// The critical path for manual picks: every requester-supplied Pick is
-// written here, and nowhere else. One Prisma interactive transaction,
-// sequenced so that the Draft row lock is the single serialization point
-// for a turn:
+// The critical path for manual (human) picks: every requester-supplied
+// Pick is written here, and nowhere else. One Prisma interactive
+// transaction, sequenced so that the Draft row lock is the single
+// serialization point for a turn:
 //
-//   1. confirm the requester is a current LeagueMember (no lock needed —
+//   1. resolve the requesting human's own LeagueMember row by (leagueId,
+//      userId) — this stays userId-based on purpose (Phase 5.1): a human
+//      socket/API caller only ever authenticates with a real User.id, and
+//      that identity must be translated into membership identity before
+//      it's compared to anything turn-related. No lock needed here —
 //      membership can't change once a Draft exists, since starting a draft
 //      already requires memberCount === teamCount and joinLeague's own
-//      capacity check makes a later join impossible; see join-league.ts)
+//      capacity check makes a later join impossible; see join-league.ts.
 //   2. lock the Draft row FOR UPDATE, scoped by leagueId (lockDraftForLeague)
-//   3. verify the Draft exists / is ACTIVE / belongs to this requester's turn
+//   3. verify the Draft exists / is ACTIVE / belongs to this requester's
+//      turn — turn ownership is now membership identity vs. membership
+//      identity (draft.currentMemberId === membership.id), never a raw
+//      User.id comparison, so this check is equally correct if the current
+//      picker later turns out to be a BOT (it just never matches a human
+//      requester's membership.id)
 //   4. read League config plainly (unlocked) — safe for the same reason as
 //      (1): settings/reorder mutations already return 409 once a Draft
 //      exists, so nothing left can race a live pick against League config
@@ -231,7 +250,7 @@ export async function applyPick(
 // concurrent submitPick call for the same draft blocks on step 2 until the
 // first transaction commits or rolls back. By the time it acquires the
 // lock, it re-reads the Draft row's post-commit state — so if the first
-// call already advanced currentUserId, the second call fails the turn
+// call already advanced currentMemberId, the second call fails the turn
 // check at step 3 before it ever reaches applyPick. The same lock is what
 // serializes submitPick against processExpiredDraftTurn (autopick,
 // Milestone 3.4): whichever acquires the Draft row first wins, and the
@@ -239,6 +258,12 @@ export async function applyPick(
 // @@unique([draftId, playerId]) constraint remains the real backstop
 // guarantee regardless of whether a given race actually reaches it through
 // this path.
+//
+// Bots never call this function directly — a bot's turn is a future
+// server-side orchestrator's job (Phase 5.3), which will call applyPick
+// itself with the bot's own LeagueMember.id, bypassing this
+// userId-authenticated entry point entirely. submitPick's public signature
+// and human-facing behavior are unchanged by Phase 5.1.
 export async function submitPick(
   leagueId: string,
   requestingUserId: string,
@@ -259,7 +284,7 @@ export async function submitPick(
     if (draft.status !== "ACTIVE") {
       throw new DraftNotActiveError();
     }
-    if (draft.currentUserId !== requestingUserId) {
+    if (draft.currentMemberId !== membership.id) {
       throw new NotOnTheClockError();
     }
 
@@ -268,6 +293,12 @@ export async function submitPick(
       select: { teamCount: true, rosterSize: true, draftType: true, timerSeconds: true },
     });
 
-    return applyPick(tx, { draft, league, userId: requestingUserId, playerId, wasAutopick: false });
+    return applyPick(tx, {
+      draft,
+      league,
+      leagueMemberId: membership.id,
+      playerId,
+      wasAutopick: false,
+    });
   });
 }

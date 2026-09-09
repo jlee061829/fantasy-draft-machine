@@ -89,3 +89,25 @@ export async function createTestPlayer(
     },
   });
 }
+
+// Phase 5.1: the one place a BOT LeagueMember fixture is constructed, so
+// every test that needs one (getDraftState, future autopick/orchestration
+// tests) shares the exact same shape — userId: null, displayName set,
+// participantType: "BOT" — rather than each test hand-rolling the shape and
+// risking drift from the participant-shape CHECK constraint.
+export async function createTestBotMember(
+  leagueId: string,
+  draftSlot: number,
+  overrides: Partial<{ displayName: string }> = {},
+) {
+  assertUsingTestDatabase();
+  const suffix = randomUUID().slice(0, 8);
+  return prisma.leagueMember.create({
+    data: {
+      leagueId,
+      draftSlot,
+      participantType: "BOT",
+      displayName: overrides.displayName ?? `Test Bot ${suffix}`,
+    },
+  });
+}

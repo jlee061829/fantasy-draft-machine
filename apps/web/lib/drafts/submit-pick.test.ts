@@ -37,36 +37,58 @@ async function createTestLeague(ownerId: string, overrides: LeagueOverrides = {}
 }
 
 // Owner already occupies slot 1 from league creation; fills slots 2..teamCount.
+// Phase 5.1: returns the created LeagueMember rows too (not just the Users),
+// since callers now need each slot's membershipId as well as its userId.
 async function fillRemainingSlots(leagueId: string, teamCount: number) {
   const users = await Promise.all(Array.from({ length: teamCount - 1 }, () => createTestUser()));
-  await Promise.all(
+  const members = await Promise.all(
     users.map((user, i) =>
       prisma.leagueMember.create({
         data: { leagueId, userId: user.id, draftSlot: i + 2 },
       }),
     ),
   );
-  return users;
+  return users.map((user, i) => ({ user, membership: members[i]! }));
 }
 
 // Creates a fully-filled, started league and returns everything a
-// pick-submission test needs: the league, a slot -> userId map (so tests
-// can assert persisted currentUserId against expected turn order without
+// pick-submission test needs: the league, a slot -> userId map and a
+// slot -> membershipId map (so tests can assert persisted currentMemberId
+// against expected turn order, or resolve a membershipId back to the
+// userId submitPick's requestingUserId parameter needs, without
 // duplicating getPickerForPickNumber's arithmetic), and the initial
 // startDraft result.
+//
+// Phase 5.1: submitPick's requestingUserId parameter is still a real
+// User.id (humans always authenticate that way — see submit-pick.ts's own
+// comments), but Draft.currentMemberId/Pick.leagueMemberId are now
+// membership ids, not user ids. userIdByMembershipId bridges the two for
+// tests that track "the current picker" across a loop of many picks
+// without recomputing getPickerForPickNumber themselves.
 async function startFullDraft(overrides: LeagueOverrides = {}) {
   const teamCount = overrides.teamCount ?? 4;
   const owner = await createTestUser();
-  const { league } = await createTestLeague(owner.id, overrides);
-  const others = await fillRemainingSlots(league.id, teamCount);
+  const { league, membership: ownerMembership } = await createTestLeague(owner.id, overrides);
+  const otherMembers = await fillRemainingSlots(league.id, teamCount);
 
   const membersBySlot: Record<number, string> = { 1: owner.id };
-  others.forEach((user, i) => {
+  const membershipsBySlot: Record<number, string> = { 1: ownerMembership.id };
+  const userIdByMembershipId: Record<string, string> = { [ownerMembership.id]: owner.id };
+  otherMembers.forEach(({ user, membership }, i) => {
     membersBySlot[i + 2] = user.id;
+    membershipsBySlot[i + 2] = membership.id;
+    userIdByMembershipId[membership.id] = user.id;
   });
 
   const started = await startDraft(league.id, owner.id);
-  return { league, owner, membersBySlot, draft: started.draft };
+  return {
+    league,
+    owner,
+    membersBySlot,
+    membershipsBySlot,
+    userIdByMembershipId,
+    draft: started.draft,
+  };
 }
 
 // Mirrors submit-pick.ts's uniqueConstraintFields: under this project's
@@ -133,7 +155,7 @@ describe("submitPick", () => {
 
     it("rejects a member who is not the current picker, leaving Pick/Draft state unchanged", async () => {
       const { league, membersBySlot, draft } = await startFullDraft({ teamCount: 4 });
-      const notOnClock = membersBySlot[2];
+      const notOnClock = membersBySlot[2]!;
       const player = await createTestPlayer();
 
       await expect(submitPick(league.id, notOnClock, player.id)).rejects.toBeInstanceOf(
@@ -144,14 +166,14 @@ describe("submitPick", () => {
       expect(pickCount).toBe(0);
       const persisted = await prisma.draft.findUnique({ where: { id: draft.id } });
       expect(persisted?.currentPickNumber).toBe(1);
-      expect(persisted?.currentUserId).toBe(draft.currentUserId);
+      expect(persisted?.currentMemberId).toBe(draft.currentMemberId);
     });
 
     it("rejects an unknown playerId, leaving Pick/Draft state unchanged", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4 });
+      const { league, membersBySlot, draft } = await startFullDraft({ teamCount: 4 });
 
       await expect(
-        submitPick(league.id, draft.currentUserId, "nonexistent-player-id"),
+        submitPick(league.id, membersBySlot[1]!, "nonexistent-player-id"),
       ).rejects.toBeInstanceOf(PlayerNotFoundError);
 
       const pickCount = await prisma.pick.count({ where: { draftId: draft.id } });
@@ -161,31 +183,33 @@ describe("submitPick", () => {
     });
 
     it("rejects re-drafting an already-picked player, leaving Draft state at the next turn unchanged", async () => {
-      const { league, membersBySlot, draft } = await startFullDraft({ teamCount: 4 });
+      const { league, membersBySlot, membershipsBySlot, draft } = await startFullDraft({
+        teamCount: 4,
+      });
       const player = await createTestPlayer();
 
-      await submitPick(league.id, draft.currentUserId, player.id);
+      await submitPick(league.id, membersBySlot[1]!, player.id);
 
       const afterFirstPick = await prisma.draft.findUnique({ where: { id: draft.id } });
       expect(afterFirstPick?.currentPickNumber).toBe(2);
-      const secondPicker = afterFirstPick!.currentUserId!;
-      expect(secondPicker).toBe(membersBySlot[2]);
+      const secondPickerMembershipId = afterFirstPick!.currentMemberId!;
+      expect(secondPickerMembershipId).toBe(membershipsBySlot[2]);
 
-      await expect(submitPick(league.id, secondPicker, player.id)).rejects.toBeInstanceOf(
-        PlayerAlreadyDraftedError,
-      );
+      await expect(
+        submitPick(league.id, membersBySlot[2]!, player.id),
+      ).rejects.toBeInstanceOf(PlayerAlreadyDraftedError);
 
       const pickCount = await prisma.pick.count({ where: { draftId: draft.id } });
       expect(pickCount).toBe(1);
       const afterRejection = await prisma.draft.findUnique({ where: { id: draft.id } });
       expect(afterRejection?.currentPickNumber).toBe(2);
-      expect(afterRejection?.currentUserId).toBe(secondPicker);
+      expect(afterRejection?.currentMemberId).toBe(secondPickerMembershipId);
     });
 
     it("rejects a pick submitted against a COMPLETE draft, leaving state unchanged", async () => {
       // teamCount 4 * rosterSize 8 = 32 total picks; drive the draft to
       // completion, then attempt one more pick against the now-COMPLETE draft.
-      const { league, membersBySlot, draft } = await startFullDraft({
+      const { league, membersBySlot, userIdByMembershipId, draft } = await startFullDraft({
         teamCount: 4,
         rosterSize: 8,
       });
@@ -194,10 +218,12 @@ describe("submitPick", () => {
         Array.from({ length: totalPicks }, () => createTestPlayer()),
       );
 
-      let currentUserId = draft.currentUserId;
+      let currentUserId = membersBySlot[1]!;
       for (let i = 0; i < totalPicks; i++) {
-        const result = await submitPick(league.id, currentUserId, players[i].id);
-        currentUserId = result.draft.currentUserId ?? currentUserId;
+        const result = await submitPick(league.id, currentUserId, players[i]!.id);
+        if (result.draft.currentMemberId) {
+          currentUserId = userIdByMembershipId[result.draft.currentMemberId]!;
+        }
       }
 
       const completed = await prisma.draft.findUnique({ where: { id: draft.id } });
@@ -205,7 +231,7 @@ describe("submitPick", () => {
 
       const extraPlayer = await createTestPlayer();
       await expect(
-        submitPick(league.id, membersBySlot[1], extraPlayer.id),
+        submitPick(league.id, membersBySlot[1]!, extraPlayer.id),
       ).rejects.toBeInstanceOf(DraftNotActiveError);
 
       const pickCount = await prisma.pick.count({ where: { draftId: draft.id } });
@@ -215,11 +241,11 @@ describe("submitPick", () => {
 
   describe("successful submission", () => {
     it("persists wasAutopick: false and advances the deadline within a tolerance window", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4, timerSeconds: 90 });
+      const { league, membersBySlot } = await startFullDraft({ teamCount: 4, timerSeconds: 90 });
       const player = await createTestPlayer();
       const before = Date.now();
 
-      const result = await submitPick(league.id, draft.currentUserId, player.id);
+      const result = await submitPick(league.id, membersBySlot[1]!, player.id);
 
       expect(result.pick.wasAutopick).toBe(false);
       expect(result.pick.pickNumber).toBe(1);
@@ -230,68 +256,71 @@ describe("submitPick", () => {
       expect(deadline).toBeLessThan(before + 90_000 + 5_000);
     });
 
-    it("advances currentUserId through SNAKE round boundaries", async () => {
-      const { league, membersBySlot, draft } = await startFullDraft({
+    it("advances currentMemberId through SNAKE round boundaries", async () => {
+      const { league, membersBySlot, membershipsBySlot } = await startFullDraft({
         teamCount: 4,
         draftType: "SNAKE",
       });
       const players = await Promise.all(Array.from({ length: 9 }, () => createTestPlayer()));
 
-      let currentUserId = draft.currentUserId;
       for (let pickNumber = 1; pickNumber <= 9; pickNumber++) {
-        const result = await submitPick(league.id, currentUserId, players[pickNumber - 1].id);
+        const slot = getPickerForPickNumber(pickNumber, 4, "SNAKE");
+        const result = await submitPick(league.id, membersBySlot[slot]!, players[pickNumber - 1]!.id);
         if (pickNumber < 9) {
           const expectedSlot = getPickerForPickNumber(pickNumber + 1, 4, "SNAKE");
-          expect(result.draft.currentUserId).toBe(membersBySlot[expectedSlot]);
-          currentUserId = result.draft.currentUserId!;
+          expect(result.draft.currentMemberId).toBe(membershipsBySlot[expectedSlot]);
         }
       }
       // Crossed round boundaries 4->5 (reverses 4,3,2,1) and 8->9 (forward
       // again to slot 1), both asserted via the loop above.
     });
 
-    it("advances currentUserId through LINEAR round boundaries", async () => {
-      const { league, membersBySlot, draft } = await startFullDraft({
+    it("advances currentMemberId through LINEAR round boundaries", async () => {
+      const { league, membersBySlot, membershipsBySlot } = await startFullDraft({
         teamCount: 4,
         draftType: "LINEAR",
       });
       const players = await Promise.all(Array.from({ length: 5 }, () => createTestPlayer()));
 
-      let currentUserId = draft.currentUserId;
       for (let pickNumber = 1; pickNumber <= 5; pickNumber++) {
-        const result = await submitPick(league.id, currentUserId, players[pickNumber - 1].id);
+        const slot = getPickerForPickNumber(pickNumber, 4, "LINEAR");
+        const result = await submitPick(league.id, membersBySlot[slot]!, players[pickNumber - 1]!.id);
         if (pickNumber < 5) {
           const expectedSlot = getPickerForPickNumber(pickNumber + 1, 4, "LINEAR");
-          expect(result.draft.currentUserId).toBe(membersBySlot[expectedSlot]);
-          currentUserId = result.draft.currentUserId!;
+          expect(result.draft.currentMemberId).toBe(membershipsBySlot[expectedSlot]);
         }
       }
       // Pick 5 wraps LINEAR order back to slot 1, unlike SNAKE's reversal.
     });
 
     it("completes the draft on the final pick with the correct terminal state", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4, rosterSize: 8 });
+      const { league, membersBySlot, userIdByMembershipId, draft } = await startFullDraft({
+        teamCount: 4,
+        rosterSize: 8,
+      });
       const totalPicks = 4 * 8;
       const players = await Promise.all(
         Array.from({ length: totalPicks }, () => createTestPlayer()),
       );
 
-      let currentUserId = draft.currentUserId;
+      let currentUserId = membersBySlot[1]!;
       let lastResult;
       for (let i = 0; i < totalPicks; i++) {
-        lastResult = await submitPick(league.id, currentUserId, players[i].id);
-        currentUserId = lastResult.draft.currentUserId ?? currentUserId;
+        lastResult = await submitPick(league.id, currentUserId, players[i]!.id);
+        if (lastResult.draft.currentMemberId) {
+          currentUserId = userIdByMembershipId[lastResult.draft.currentMemberId]!;
+        }
       }
 
       expect(lastResult!.draft.status).toBe("COMPLETE");
       expect(lastResult!.draft.currentPickNumber).toBe(totalPicks);
-      expect(lastResult!.draft.currentUserId).toBeNull();
+      expect(lastResult!.draft.currentMemberId).toBeNull();
       expect(lastResult!.draft.turnDeadline).toBeNull();
 
       const persisted = await prisma.draft.findUnique({ where: { id: draft.id } });
       expect(persisted?.status).toBe("COMPLETE");
       expect(persisted?.currentPickNumber).toBe(totalPicks);
-      expect(persisted?.currentUserId).toBeNull();
+      expect(persisted?.currentMemberId).toBeNull();
       expect(persisted?.turnDeadline).toBeNull();
 
       const picks = await prisma.pick.findMany({ where: { draftId: draft.id } });
@@ -305,12 +334,14 @@ describe("submitPick", () => {
     const CONCURRENT_REQUESTS = 20;
 
     it("under many simultaneous submissions for the same turn/player, exactly one Pick persists and the turn advances exactly once", async () => {
-      const { league, membersBySlot, draft } = await startFullDraft({ teamCount: 4 });
+      const { league, membersBySlot, membershipsBySlot, draft } = await startFullDraft({
+        teamCount: 4,
+      });
       const player = await createTestPlayer();
 
       const outcomes = await Promise.allSettled(
         Array.from({ length: CONCURRENT_REQUESTS }, () =>
-          submitPick(league.id, draft.currentUserId, player.id),
+          submitPick(league.id, membersBySlot[1]!, player.id),
         ),
       );
 
@@ -330,17 +361,17 @@ describe("submitPick", () => {
       const persisted = await prisma.draft.findUnique({ where: { id: draft.id } });
       expect(persisted?.currentPickNumber).toBe(2);
       const expectedNextSlot = getPickerForPickNumber(2, 4, "SNAKE");
-      expect(persisted?.currentUserId).toBe(membersBySlot[expectedNextSlot]);
+      expect(persisted?.currentMemberId).toBe(membershipsBySlot[expectedNextSlot]);
     });
 
     it("under many simultaneous submissions for different players by the same current picker, exactly one consumes the turn", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4 });
+      const { league, membersBySlot, draft } = await startFullDraft({ teamCount: 4 });
       const players = await Promise.all(
         Array.from({ length: CONCURRENT_REQUESTS }, () => createTestPlayer()),
       );
 
       const outcomes = await Promise.allSettled(
-        players.map((player) => submitPick(league.id, draft.currentUserId, player.id)),
+        players.map((player) => submitPick(league.id, membersBySlot[1]!, player.id)),
       );
 
       const fulfilled = outcomes.filter((o) => o.status === "fulfilled");
@@ -361,7 +392,7 @@ describe("submitPick", () => {
 
   describe("database constraint backstops", () => {
     it("enforces @@unique([draftId, playerId]) under concurrent inserts with different pickNumbers", async () => {
-      const { draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
+      const { draft, membershipsBySlot } = await startFullDraft({ teamCount: 4 });
       const player = await createTestPlayer();
 
       const outcomes = await Promise.allSettled([
@@ -369,7 +400,7 @@ describe("submitPick", () => {
           data: {
             draftId: draft.id,
             pickNumber: 1,
-            userId: membersBySlot[1],
+            leagueMemberId: membershipsBySlot[1]!,
             playerId: player.id,
             wasAutopick: false,
           },
@@ -378,7 +409,7 @@ describe("submitPick", () => {
           data: {
             draftId: draft.id,
             pickNumber: 2,
-            userId: membersBySlot[1],
+            leagueMemberId: membershipsBySlot[1]!,
             playerId: player.id,
             wasAutopick: false,
           },
@@ -391,7 +422,7 @@ describe("submitPick", () => {
       );
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      const target = uniqueConstraintFields(rejected[0].reason);
+      const target = uniqueConstraintFields(rejected[0]!.reason);
       expect(target).not.toBeNull();
       expect(target).toContain("draftId");
       expect(target).toContain("playerId");
@@ -402,7 +433,7 @@ describe("submitPick", () => {
     });
 
     it("enforces @@unique([draftId, pickNumber]) under concurrent inserts with different playerIds", async () => {
-      const { draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
+      const { draft, membershipsBySlot } = await startFullDraft({ teamCount: 4 });
       const [playerA, playerB] = await Promise.all([createTestPlayer(), createTestPlayer()]);
 
       const outcomes = await Promise.allSettled([
@@ -410,7 +441,7 @@ describe("submitPick", () => {
           data: {
             draftId: draft.id,
             pickNumber: 5,
-            userId: membersBySlot[1],
+            leagueMemberId: membershipsBySlot[1]!,
             playerId: playerA.id,
             wasAutopick: false,
           },
@@ -419,7 +450,7 @@ describe("submitPick", () => {
           data: {
             draftId: draft.id,
             pickNumber: 5,
-            userId: membersBySlot[1],
+            leagueMemberId: membershipsBySlot[1]!,
             playerId: playerB.id,
             wasAutopick: false,
           },
@@ -432,7 +463,7 @@ describe("submitPick", () => {
       );
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      const target = uniqueConstraintFields(rejected[0].reason);
+      const target = uniqueConstraintFields(rejected[0]!.reason);
       expect(target).not.toBeNull();
       expect(target).toContain("draftId");
       expect(target).toContain("pickNumber");

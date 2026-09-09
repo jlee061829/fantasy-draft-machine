@@ -25,6 +25,7 @@ function league(overrides: Partial<DraftStateResult["league"]> = {}): DraftState
 function members(count: number): DraftStateResult["members"] {
   return Array.from({ length: count }, (_, i) => ({
     membershipId: `m${i + 1}`,
+    participantType: "HUMAN" as const,
     userId: `user-${i + 1}`,
     name: `Manager ${i + 1}`,
     image: null,
@@ -32,10 +33,14 @@ function members(count: number): DraftStateResult["members"] {
   }));
 }
 
-function pick(pickNumber: number, userId: string, overrides: Partial<DraftStatePick> = {}): DraftStatePick {
+function pick(
+  pickNumber: number,
+  leagueMemberId: string,
+  overrides: Partial<DraftStatePick> = {},
+): DraftStatePick {
   return {
     pickNumber,
-    userId,
+    leagueMemberId,
     playerId: `player-${pickNumber}`,
     playerName: `Player ${pickNumber}`,
     playerPosition: "RB",
@@ -113,7 +118,7 @@ describe("deriveDraftBoard", () => {
           id: "d1",
           status: "ACTIVE",
           currentPickNumber: 3,
-          currentUserId: "user-3",
+          currentMemberId: "m3",
           turnDeadline: new Date(1000).toISOString(),
         },
         picks: [pick(1, "user-1"), pick(2, "user-2")],
@@ -133,7 +138,7 @@ describe("deriveDraftBoard", () => {
           id: "d1",
           status: "ACTIVE",
           currentPickNumber: 3,
-          currentUserId: "user-3",
+          currentMemberId: "m3",
           turnDeadline: new Date(1000).toISOString(),
         },
         picks: [pick(1, "user-1"), pick(2, "user-2")],
@@ -152,7 +157,7 @@ describe("deriveDraftBoard", () => {
           id: "d1",
           status: "COMPLETE",
           currentPickNumber: 2,
-          currentUserId: null,
+          currentMemberId: null,
           turnDeadline: null,
         },
         picks: [pick(1, "user-1"), pick(2, "user-2")],

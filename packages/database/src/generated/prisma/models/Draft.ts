@@ -39,7 +39,7 @@ export type DraftMinAggregateOutputType = {
   leagueId: string | null
   status: $Enums.DraftStatus | null
   currentPickNumber: number | null
-  currentUserId: string | null
+  currentMemberId: string | null
   turnDeadline: Date | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -50,7 +50,7 @@ export type DraftMaxAggregateOutputType = {
   leagueId: string | null
   status: $Enums.DraftStatus | null
   currentPickNumber: number | null
-  currentUserId: string | null
+  currentMemberId: string | null
   turnDeadline: Date | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -61,7 +61,7 @@ export type DraftCountAggregateOutputType = {
   leagueId: number
   status: number
   currentPickNumber: number
-  currentUserId: number
+  currentMemberId: number
   turnDeadline: number
   createdAt: number
   updatedAt: number
@@ -82,7 +82,7 @@ export type DraftMinAggregateInputType = {
   leagueId?: true
   status?: true
   currentPickNumber?: true
-  currentUserId?: true
+  currentMemberId?: true
   turnDeadline?: true
   createdAt?: true
   updatedAt?: true
@@ -93,7 +93,7 @@ export type DraftMaxAggregateInputType = {
   leagueId?: true
   status?: true
   currentPickNumber?: true
-  currentUserId?: true
+  currentMemberId?: true
   turnDeadline?: true
   createdAt?: true
   updatedAt?: true
@@ -104,7 +104,7 @@ export type DraftCountAggregateInputType = {
   leagueId?: true
   status?: true
   currentPickNumber?: true
-  currentUserId?: true
+  currentMemberId?: true
   turnDeadline?: true
   createdAt?: true
   updatedAt?: true
@@ -202,7 +202,7 @@ export type DraftGroupByOutputType = {
   leagueId: string
   status: $Enums.DraftStatus
   currentPickNumber: number
-  currentUserId: string | null
+  currentMemberId: string | null
   turnDeadline: Date | null
   createdAt: Date
   updatedAt: Date
@@ -236,12 +236,12 @@ export type DraftWhereInput = {
   leagueId?: Prisma.StringFilter<"Draft"> | string
   status?: Prisma.EnumDraftStatusFilter<"Draft"> | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFilter<"Draft"> | number
-  currentUserId?: Prisma.StringNullableFilter<"Draft"> | string | null
+  currentMemberId?: Prisma.StringNullableFilter<"Draft"> | string | null
   turnDeadline?: Prisma.DateTimeNullableFilter<"Draft"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
   league?: Prisma.XOR<Prisma.LeagueScalarRelationFilter, Prisma.LeagueWhereInput>
-  currentUser?: Prisma.XOR<Prisma.UserNullableScalarRelationFilter, Prisma.UserWhereInput> | null
+  currentMember?: Prisma.XOR<Prisma.LeagueMemberNullableScalarRelationFilter, Prisma.LeagueMemberWhereInput> | null
   picks?: Prisma.PickListRelationFilter
   chatMessages?: Prisma.ChatMessageListRelationFilter
 }
@@ -251,12 +251,12 @@ export type DraftOrderByWithRelationInput = {
   leagueId?: Prisma.SortOrder
   status?: Prisma.SortOrder
   currentPickNumber?: Prisma.SortOrder
-  currentUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  currentMemberId?: Prisma.SortOrderInput | Prisma.SortOrder
   turnDeadline?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   league?: Prisma.LeagueOrderByWithRelationInput
-  currentUser?: Prisma.UserOrderByWithRelationInput
+  currentMember?: Prisma.LeagueMemberOrderByWithRelationInput
   picks?: Prisma.PickOrderByRelationAggregateInput
   chatMessages?: Prisma.ChatMessageOrderByRelationAggregateInput
 }
@@ -269,12 +269,12 @@ export type DraftWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.DraftWhereInput | Prisma.DraftWhereInput[]
   status?: Prisma.EnumDraftStatusFilter<"Draft"> | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFilter<"Draft"> | number
-  currentUserId?: Prisma.StringNullableFilter<"Draft"> | string | null
+  currentMemberId?: Prisma.StringNullableFilter<"Draft"> | string | null
   turnDeadline?: Prisma.DateTimeNullableFilter<"Draft"> | Date | string | null
   createdAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
   league?: Prisma.XOR<Prisma.LeagueScalarRelationFilter, Prisma.LeagueWhereInput>
-  currentUser?: Prisma.XOR<Prisma.UserNullableScalarRelationFilter, Prisma.UserWhereInput> | null
+  currentMember?: Prisma.XOR<Prisma.LeagueMemberNullableScalarRelationFilter, Prisma.LeagueMemberWhereInput> | null
   picks?: Prisma.PickListRelationFilter
   chatMessages?: Prisma.ChatMessageListRelationFilter
 }, "id" | "leagueId">
@@ -284,7 +284,7 @@ export type DraftOrderByWithAggregationInput = {
   leagueId?: Prisma.SortOrder
   status?: Prisma.SortOrder
   currentPickNumber?: Prisma.SortOrder
-  currentUserId?: Prisma.SortOrderInput | Prisma.SortOrder
+  currentMemberId?: Prisma.SortOrderInput | Prisma.SortOrder
   turnDeadline?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -303,7 +303,7 @@ export type DraftScalarWhereWithAggregatesInput = {
   leagueId?: Prisma.StringWithAggregatesFilter<"Draft"> | string
   status?: Prisma.EnumDraftStatusWithAggregatesFilter<"Draft"> | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntWithAggregatesFilter<"Draft"> | number
-  currentUserId?: Prisma.StringNullableWithAggregatesFilter<"Draft"> | string | null
+  currentMemberId?: Prisma.StringNullableWithAggregatesFilter<"Draft"> | string | null
   turnDeadline?: Prisma.DateTimeNullableWithAggregatesFilter<"Draft"> | Date | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Draft"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"Draft"> | Date | string
@@ -317,7 +317,7 @@ export type DraftCreateInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   league: Prisma.LeagueCreateNestedOneWithoutDraftInput
-  currentUser?: Prisma.UserCreateNestedOneWithoutCurrentTurnDraftsInput
+  currentMember?: Prisma.LeagueMemberCreateNestedOneWithoutCurrentTurnDraftsInput
   picks?: Prisma.PickCreateNestedManyWithoutDraftInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutDraftInput
 }
@@ -327,7 +327,7 @@ export type DraftUncheckedCreateInput = {
   leagueId: string
   status?: $Enums.DraftStatus
   currentPickNumber?: number
-  currentUserId?: string | null
+  currentMemberId?: string | null
   turnDeadline?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -343,7 +343,7 @@ export type DraftUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   league?: Prisma.LeagueUpdateOneRequiredWithoutDraftNestedInput
-  currentUser?: Prisma.UserUpdateOneWithoutCurrentTurnDraftsNestedInput
+  currentMember?: Prisma.LeagueMemberUpdateOneWithoutCurrentTurnDraftsNestedInput
   picks?: Prisma.PickUpdateManyWithoutDraftNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutDraftNestedInput
 }
@@ -353,7 +353,7 @@ export type DraftUncheckedUpdateInput = {
   leagueId?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  currentUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  currentMemberId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   turnDeadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -366,7 +366,7 @@ export type DraftCreateManyInput = {
   leagueId: string
   status?: $Enums.DraftStatus
   currentPickNumber?: number
-  currentUserId?: string | null
+  currentMemberId?: string | null
   turnDeadline?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -386,10 +386,15 @@ export type DraftUncheckedUpdateManyInput = {
   leagueId?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  currentUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  currentMemberId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   turnDeadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type DraftNullableScalarRelationFilter = {
+  is?: Prisma.DraftWhereInput | null
+  isNot?: Prisma.DraftWhereInput | null
 }
 
 export type DraftListRelationFilter = {
@@ -402,17 +407,12 @@ export type DraftOrderByRelationAggregateInput = {
   _count?: Prisma.SortOrder
 }
 
-export type DraftNullableScalarRelationFilter = {
-  is?: Prisma.DraftWhereInput | null
-  isNot?: Prisma.DraftWhereInput | null
-}
-
 export type DraftCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   leagueId?: Prisma.SortOrder
   status?: Prisma.SortOrder
   currentPickNumber?: Prisma.SortOrder
-  currentUserId?: Prisma.SortOrder
+  currentMemberId?: Prisma.SortOrder
   turnDeadline?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -427,7 +427,7 @@ export type DraftMaxOrderByAggregateInput = {
   leagueId?: Prisma.SortOrder
   status?: Prisma.SortOrder
   currentPickNumber?: Prisma.SortOrder
-  currentUserId?: Prisma.SortOrder
+  currentMemberId?: Prisma.SortOrder
   turnDeadline?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -438,7 +438,7 @@ export type DraftMinOrderByAggregateInput = {
   leagueId?: Prisma.SortOrder
   status?: Prisma.SortOrder
   currentPickNumber?: Prisma.SortOrder
-  currentUserId?: Prisma.SortOrder
+  currentMemberId?: Prisma.SortOrder
   turnDeadline?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -451,48 +451,6 @@ export type DraftSumOrderByAggregateInput = {
 export type DraftScalarRelationFilter = {
   is?: Prisma.DraftWhereInput
   isNot?: Prisma.DraftWhereInput
-}
-
-export type DraftCreateNestedManyWithoutCurrentUserInput = {
-  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentUserInput, Prisma.DraftUncheckedCreateWithoutCurrentUserInput> | Prisma.DraftCreateWithoutCurrentUserInput[] | Prisma.DraftUncheckedCreateWithoutCurrentUserInput[]
-  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentUserInput | Prisma.DraftCreateOrConnectWithoutCurrentUserInput[]
-  createMany?: Prisma.DraftCreateManyCurrentUserInputEnvelope
-  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-}
-
-export type DraftUncheckedCreateNestedManyWithoutCurrentUserInput = {
-  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentUserInput, Prisma.DraftUncheckedCreateWithoutCurrentUserInput> | Prisma.DraftCreateWithoutCurrentUserInput[] | Prisma.DraftUncheckedCreateWithoutCurrentUserInput[]
-  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentUserInput | Prisma.DraftCreateOrConnectWithoutCurrentUserInput[]
-  createMany?: Prisma.DraftCreateManyCurrentUserInputEnvelope
-  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-}
-
-export type DraftUpdateManyWithoutCurrentUserNestedInput = {
-  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentUserInput, Prisma.DraftUncheckedCreateWithoutCurrentUserInput> | Prisma.DraftCreateWithoutCurrentUserInput[] | Prisma.DraftUncheckedCreateWithoutCurrentUserInput[]
-  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentUserInput | Prisma.DraftCreateOrConnectWithoutCurrentUserInput[]
-  upsert?: Prisma.DraftUpsertWithWhereUniqueWithoutCurrentUserInput | Prisma.DraftUpsertWithWhereUniqueWithoutCurrentUserInput[]
-  createMany?: Prisma.DraftCreateManyCurrentUserInputEnvelope
-  set?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  disconnect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  delete?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  update?: Prisma.DraftUpdateWithWhereUniqueWithoutCurrentUserInput | Prisma.DraftUpdateWithWhereUniqueWithoutCurrentUserInput[]
-  updateMany?: Prisma.DraftUpdateManyWithWhereWithoutCurrentUserInput | Prisma.DraftUpdateManyWithWhereWithoutCurrentUserInput[]
-  deleteMany?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
-}
-
-export type DraftUncheckedUpdateManyWithoutCurrentUserNestedInput = {
-  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentUserInput, Prisma.DraftUncheckedCreateWithoutCurrentUserInput> | Prisma.DraftCreateWithoutCurrentUserInput[] | Prisma.DraftUncheckedCreateWithoutCurrentUserInput[]
-  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentUserInput | Prisma.DraftCreateOrConnectWithoutCurrentUserInput[]
-  upsert?: Prisma.DraftUpsertWithWhereUniqueWithoutCurrentUserInput | Prisma.DraftUpsertWithWhereUniqueWithoutCurrentUserInput[]
-  createMany?: Prisma.DraftCreateManyCurrentUserInputEnvelope
-  set?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  disconnect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  delete?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
-  update?: Prisma.DraftUpdateWithWhereUniqueWithoutCurrentUserInput | Prisma.DraftUpdateWithWhereUniqueWithoutCurrentUserInput[]
-  updateMany?: Prisma.DraftUpdateManyWithWhereWithoutCurrentUserInput | Prisma.DraftUpdateManyWithWhereWithoutCurrentUserInput[]
-  deleteMany?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
 }
 
 export type DraftCreateNestedOneWithoutLeagueInput = {
@@ -527,6 +485,48 @@ export type DraftUncheckedUpdateOneWithoutLeagueNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.DraftUpdateToOneWithWhereWithoutLeagueInput, Prisma.DraftUpdateWithoutLeagueInput>, Prisma.DraftUncheckedUpdateWithoutLeagueInput>
 }
 
+export type DraftCreateNestedManyWithoutCurrentMemberInput = {
+  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentMemberInput, Prisma.DraftUncheckedCreateWithoutCurrentMemberInput> | Prisma.DraftCreateWithoutCurrentMemberInput[] | Prisma.DraftUncheckedCreateWithoutCurrentMemberInput[]
+  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentMemberInput | Prisma.DraftCreateOrConnectWithoutCurrentMemberInput[]
+  createMany?: Prisma.DraftCreateManyCurrentMemberInputEnvelope
+  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+}
+
+export type DraftUncheckedCreateNestedManyWithoutCurrentMemberInput = {
+  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentMemberInput, Prisma.DraftUncheckedCreateWithoutCurrentMemberInput> | Prisma.DraftCreateWithoutCurrentMemberInput[] | Prisma.DraftUncheckedCreateWithoutCurrentMemberInput[]
+  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentMemberInput | Prisma.DraftCreateOrConnectWithoutCurrentMemberInput[]
+  createMany?: Prisma.DraftCreateManyCurrentMemberInputEnvelope
+  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+}
+
+export type DraftUpdateManyWithoutCurrentMemberNestedInput = {
+  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentMemberInput, Prisma.DraftUncheckedCreateWithoutCurrentMemberInput> | Prisma.DraftCreateWithoutCurrentMemberInput[] | Prisma.DraftUncheckedCreateWithoutCurrentMemberInput[]
+  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentMemberInput | Prisma.DraftCreateOrConnectWithoutCurrentMemberInput[]
+  upsert?: Prisma.DraftUpsertWithWhereUniqueWithoutCurrentMemberInput | Prisma.DraftUpsertWithWhereUniqueWithoutCurrentMemberInput[]
+  createMany?: Prisma.DraftCreateManyCurrentMemberInputEnvelope
+  set?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  disconnect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  delete?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  update?: Prisma.DraftUpdateWithWhereUniqueWithoutCurrentMemberInput | Prisma.DraftUpdateWithWhereUniqueWithoutCurrentMemberInput[]
+  updateMany?: Prisma.DraftUpdateManyWithWhereWithoutCurrentMemberInput | Prisma.DraftUpdateManyWithWhereWithoutCurrentMemberInput[]
+  deleteMany?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
+}
+
+export type DraftUncheckedUpdateManyWithoutCurrentMemberNestedInput = {
+  create?: Prisma.XOR<Prisma.DraftCreateWithoutCurrentMemberInput, Prisma.DraftUncheckedCreateWithoutCurrentMemberInput> | Prisma.DraftCreateWithoutCurrentMemberInput[] | Prisma.DraftUncheckedCreateWithoutCurrentMemberInput[]
+  connectOrCreate?: Prisma.DraftCreateOrConnectWithoutCurrentMemberInput | Prisma.DraftCreateOrConnectWithoutCurrentMemberInput[]
+  upsert?: Prisma.DraftUpsertWithWhereUniqueWithoutCurrentMemberInput | Prisma.DraftUpsertWithWhereUniqueWithoutCurrentMemberInput[]
+  createMany?: Prisma.DraftCreateManyCurrentMemberInputEnvelope
+  set?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  disconnect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  delete?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  connect?: Prisma.DraftWhereUniqueInput | Prisma.DraftWhereUniqueInput[]
+  update?: Prisma.DraftUpdateWithWhereUniqueWithoutCurrentMemberInput | Prisma.DraftUpdateWithWhereUniqueWithoutCurrentMemberInput[]
+  updateMany?: Prisma.DraftUpdateManyWithWhereWithoutCurrentMemberInput | Prisma.DraftUpdateManyWithWhereWithoutCurrentMemberInput[]
+  deleteMany?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
+}
+
 export type EnumDraftStatusFieldUpdateOperationsInput = {
   set?: $Enums.DraftStatus
 }
@@ -559,70 +559,6 @@ export type DraftUpdateOneRequiredWithoutChatMessagesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.DraftUpdateToOneWithWhereWithoutChatMessagesInput, Prisma.DraftUpdateWithoutChatMessagesInput>, Prisma.DraftUncheckedUpdateWithoutChatMessagesInput>
 }
 
-export type DraftCreateWithoutCurrentUserInput = {
-  id?: string
-  status?: $Enums.DraftStatus
-  currentPickNumber?: number
-  turnDeadline?: Date | string | null
-  createdAt?: Date | string
-  updatedAt?: Date | string
-  league: Prisma.LeagueCreateNestedOneWithoutDraftInput
-  picks?: Prisma.PickCreateNestedManyWithoutDraftInput
-  chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutDraftInput
-}
-
-export type DraftUncheckedCreateWithoutCurrentUserInput = {
-  id?: string
-  leagueId: string
-  status?: $Enums.DraftStatus
-  currentPickNumber?: number
-  turnDeadline?: Date | string | null
-  createdAt?: Date | string
-  updatedAt?: Date | string
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutDraftInput
-  chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutDraftInput
-}
-
-export type DraftCreateOrConnectWithoutCurrentUserInput = {
-  where: Prisma.DraftWhereUniqueInput
-  create: Prisma.XOR<Prisma.DraftCreateWithoutCurrentUserInput, Prisma.DraftUncheckedCreateWithoutCurrentUserInput>
-}
-
-export type DraftCreateManyCurrentUserInputEnvelope = {
-  data: Prisma.DraftCreateManyCurrentUserInput | Prisma.DraftCreateManyCurrentUserInput[]
-  skipDuplicates?: boolean
-}
-
-export type DraftUpsertWithWhereUniqueWithoutCurrentUserInput = {
-  where: Prisma.DraftWhereUniqueInput
-  update: Prisma.XOR<Prisma.DraftUpdateWithoutCurrentUserInput, Prisma.DraftUncheckedUpdateWithoutCurrentUserInput>
-  create: Prisma.XOR<Prisma.DraftCreateWithoutCurrentUserInput, Prisma.DraftUncheckedCreateWithoutCurrentUserInput>
-}
-
-export type DraftUpdateWithWhereUniqueWithoutCurrentUserInput = {
-  where: Prisma.DraftWhereUniqueInput
-  data: Prisma.XOR<Prisma.DraftUpdateWithoutCurrentUserInput, Prisma.DraftUncheckedUpdateWithoutCurrentUserInput>
-}
-
-export type DraftUpdateManyWithWhereWithoutCurrentUserInput = {
-  where: Prisma.DraftScalarWhereInput
-  data: Prisma.XOR<Prisma.DraftUpdateManyMutationInput, Prisma.DraftUncheckedUpdateManyWithoutCurrentUserInput>
-}
-
-export type DraftScalarWhereInput = {
-  AND?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
-  OR?: Prisma.DraftScalarWhereInput[]
-  NOT?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
-  id?: Prisma.StringFilter<"Draft"> | string
-  leagueId?: Prisma.StringFilter<"Draft"> | string
-  status?: Prisma.EnumDraftStatusFilter<"Draft"> | $Enums.DraftStatus
-  currentPickNumber?: Prisma.IntFilter<"Draft"> | number
-  currentUserId?: Prisma.StringNullableFilter<"Draft"> | string | null
-  turnDeadline?: Prisma.DateTimeNullableFilter<"Draft"> | Date | string | null
-  createdAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
-  updatedAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
-}
-
 export type DraftCreateWithoutLeagueInput = {
   id?: string
   status?: $Enums.DraftStatus
@@ -630,7 +566,7 @@ export type DraftCreateWithoutLeagueInput = {
   turnDeadline?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
-  currentUser?: Prisma.UserCreateNestedOneWithoutCurrentTurnDraftsInput
+  currentMember?: Prisma.LeagueMemberCreateNestedOneWithoutCurrentTurnDraftsInput
   picks?: Prisma.PickCreateNestedManyWithoutDraftInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutDraftInput
 }
@@ -639,7 +575,7 @@ export type DraftUncheckedCreateWithoutLeagueInput = {
   id?: string
   status?: $Enums.DraftStatus
   currentPickNumber?: number
-  currentUserId?: string | null
+  currentMemberId?: string | null
   turnDeadline?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -670,7 +606,7 @@ export type DraftUpdateWithoutLeagueInput = {
   turnDeadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  currentUser?: Prisma.UserUpdateOneWithoutCurrentTurnDraftsNestedInput
+  currentMember?: Prisma.LeagueMemberUpdateOneWithoutCurrentTurnDraftsNestedInput
   picks?: Prisma.PickUpdateManyWithoutDraftNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutDraftNestedInput
 }
@@ -679,12 +615,76 @@ export type DraftUncheckedUpdateWithoutLeagueInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  currentUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  currentMemberId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   turnDeadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   picks?: Prisma.PickUncheckedUpdateManyWithoutDraftNestedInput
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutDraftNestedInput
+}
+
+export type DraftCreateWithoutCurrentMemberInput = {
+  id?: string
+  status?: $Enums.DraftStatus
+  currentPickNumber?: number
+  turnDeadline?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  league: Prisma.LeagueCreateNestedOneWithoutDraftInput
+  picks?: Prisma.PickCreateNestedManyWithoutDraftInput
+  chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutDraftInput
+}
+
+export type DraftUncheckedCreateWithoutCurrentMemberInput = {
+  id?: string
+  leagueId: string
+  status?: $Enums.DraftStatus
+  currentPickNumber?: number
+  turnDeadline?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  picks?: Prisma.PickUncheckedCreateNestedManyWithoutDraftInput
+  chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutDraftInput
+}
+
+export type DraftCreateOrConnectWithoutCurrentMemberInput = {
+  where: Prisma.DraftWhereUniqueInput
+  create: Prisma.XOR<Prisma.DraftCreateWithoutCurrentMemberInput, Prisma.DraftUncheckedCreateWithoutCurrentMemberInput>
+}
+
+export type DraftCreateManyCurrentMemberInputEnvelope = {
+  data: Prisma.DraftCreateManyCurrentMemberInput | Prisma.DraftCreateManyCurrentMemberInput[]
+  skipDuplicates?: boolean
+}
+
+export type DraftUpsertWithWhereUniqueWithoutCurrentMemberInput = {
+  where: Prisma.DraftWhereUniqueInput
+  update: Prisma.XOR<Prisma.DraftUpdateWithoutCurrentMemberInput, Prisma.DraftUncheckedUpdateWithoutCurrentMemberInput>
+  create: Prisma.XOR<Prisma.DraftCreateWithoutCurrentMemberInput, Prisma.DraftUncheckedCreateWithoutCurrentMemberInput>
+}
+
+export type DraftUpdateWithWhereUniqueWithoutCurrentMemberInput = {
+  where: Prisma.DraftWhereUniqueInput
+  data: Prisma.XOR<Prisma.DraftUpdateWithoutCurrentMemberInput, Prisma.DraftUncheckedUpdateWithoutCurrentMemberInput>
+}
+
+export type DraftUpdateManyWithWhereWithoutCurrentMemberInput = {
+  where: Prisma.DraftScalarWhereInput
+  data: Prisma.XOR<Prisma.DraftUpdateManyMutationInput, Prisma.DraftUncheckedUpdateManyWithoutCurrentMemberInput>
+}
+
+export type DraftScalarWhereInput = {
+  AND?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
+  OR?: Prisma.DraftScalarWhereInput[]
+  NOT?: Prisma.DraftScalarWhereInput | Prisma.DraftScalarWhereInput[]
+  id?: Prisma.StringFilter<"Draft"> | string
+  leagueId?: Prisma.StringFilter<"Draft"> | string
+  status?: Prisma.EnumDraftStatusFilter<"Draft"> | $Enums.DraftStatus
+  currentPickNumber?: Prisma.IntFilter<"Draft"> | number
+  currentMemberId?: Prisma.StringNullableFilter<"Draft"> | string | null
+  turnDeadline?: Prisma.DateTimeNullableFilter<"Draft"> | Date | string | null
+  createdAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
+  updatedAt?: Prisma.DateTimeFilter<"Draft"> | Date | string
 }
 
 export type DraftCreateWithoutPicksInput = {
@@ -695,7 +695,7 @@ export type DraftCreateWithoutPicksInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   league: Prisma.LeagueCreateNestedOneWithoutDraftInput
-  currentUser?: Prisma.UserCreateNestedOneWithoutCurrentTurnDraftsInput
+  currentMember?: Prisma.LeagueMemberCreateNestedOneWithoutCurrentTurnDraftsInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutDraftInput
 }
 
@@ -704,7 +704,7 @@ export type DraftUncheckedCreateWithoutPicksInput = {
   leagueId: string
   status?: $Enums.DraftStatus
   currentPickNumber?: number
-  currentUserId?: string | null
+  currentMemberId?: string | null
   turnDeadline?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -735,7 +735,7 @@ export type DraftUpdateWithoutPicksInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   league?: Prisma.LeagueUpdateOneRequiredWithoutDraftNestedInput
-  currentUser?: Prisma.UserUpdateOneWithoutCurrentTurnDraftsNestedInput
+  currentMember?: Prisma.LeagueMemberUpdateOneWithoutCurrentTurnDraftsNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutDraftNestedInput
 }
 
@@ -744,7 +744,7 @@ export type DraftUncheckedUpdateWithoutPicksInput = {
   leagueId?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  currentUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  currentMemberId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   turnDeadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -759,7 +759,7 @@ export type DraftCreateWithoutChatMessagesInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   league: Prisma.LeagueCreateNestedOneWithoutDraftInput
-  currentUser?: Prisma.UserCreateNestedOneWithoutCurrentTurnDraftsInput
+  currentMember?: Prisma.LeagueMemberCreateNestedOneWithoutCurrentTurnDraftsInput
   picks?: Prisma.PickCreateNestedManyWithoutDraftInput
 }
 
@@ -768,7 +768,7 @@ export type DraftUncheckedCreateWithoutChatMessagesInput = {
   leagueId: string
   status?: $Enums.DraftStatus
   currentPickNumber?: number
-  currentUserId?: string | null
+  currentMemberId?: string | null
   turnDeadline?: Date | string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -799,7 +799,7 @@ export type DraftUpdateWithoutChatMessagesInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   league?: Prisma.LeagueUpdateOneRequiredWithoutDraftNestedInput
-  currentUser?: Prisma.UserUpdateOneWithoutCurrentTurnDraftsNestedInput
+  currentMember?: Prisma.LeagueMemberUpdateOneWithoutCurrentTurnDraftsNestedInput
   picks?: Prisma.PickUpdateManyWithoutDraftNestedInput
 }
 
@@ -808,14 +808,14 @@ export type DraftUncheckedUpdateWithoutChatMessagesInput = {
   leagueId?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  currentUserId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  currentMemberId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   turnDeadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   picks?: Prisma.PickUncheckedUpdateManyWithoutDraftNestedInput
 }
 
-export type DraftCreateManyCurrentUserInput = {
+export type DraftCreateManyCurrentMemberInput = {
   id?: string
   leagueId: string
   status?: $Enums.DraftStatus
@@ -825,7 +825,7 @@ export type DraftCreateManyCurrentUserInput = {
   updatedAt?: Date | string
 }
 
-export type DraftUpdateWithoutCurrentUserInput = {
+export type DraftUpdateWithoutCurrentMemberInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
   currentPickNumber?: Prisma.IntFieldUpdateOperationsInput | number
@@ -837,7 +837,7 @@ export type DraftUpdateWithoutCurrentUserInput = {
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutDraftNestedInput
 }
 
-export type DraftUncheckedUpdateWithoutCurrentUserInput = {
+export type DraftUncheckedUpdateWithoutCurrentMemberInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   leagueId?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
@@ -849,7 +849,7 @@ export type DraftUncheckedUpdateWithoutCurrentUserInput = {
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutDraftNestedInput
 }
 
-export type DraftUncheckedUpdateManyWithoutCurrentUserInput = {
+export type DraftUncheckedUpdateManyWithoutCurrentMemberInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   leagueId?: Prisma.StringFieldUpdateOperationsInput | string
   status?: Prisma.EnumDraftStatusFieldUpdateOperationsInput | $Enums.DraftStatus
@@ -904,12 +904,12 @@ export type DraftSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   leagueId?: boolean
   status?: boolean
   currentPickNumber?: boolean
-  currentUserId?: boolean
+  currentMemberId?: boolean
   turnDeadline?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
-  currentUser?: boolean | Prisma.Draft$currentUserArgs<ExtArgs>
+  currentMember?: boolean | Prisma.Draft$currentMemberArgs<ExtArgs>
   picks?: boolean | Prisma.Draft$picksArgs<ExtArgs>
   chatMessages?: boolean | Prisma.Draft$chatMessagesArgs<ExtArgs>
   _count?: boolean | Prisma.DraftCountOutputTypeDefaultArgs<ExtArgs>
@@ -920,12 +920,12 @@ export type DraftSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   leagueId?: boolean
   status?: boolean
   currentPickNumber?: boolean
-  currentUserId?: boolean
+  currentMemberId?: boolean
   turnDeadline?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
-  currentUser?: boolean | Prisma.Draft$currentUserArgs<ExtArgs>
+  currentMember?: boolean | Prisma.Draft$currentMemberArgs<ExtArgs>
 }, ExtArgs["result"]["draft"]>
 
 export type DraftSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -933,12 +933,12 @@ export type DraftSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensi
   leagueId?: boolean
   status?: boolean
   currentPickNumber?: boolean
-  currentUserId?: boolean
+  currentMemberId?: boolean
   turnDeadline?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
-  currentUser?: boolean | Prisma.Draft$currentUserArgs<ExtArgs>
+  currentMember?: boolean | Prisma.Draft$currentMemberArgs<ExtArgs>
 }, ExtArgs["result"]["draft"]>
 
 export type DraftSelectScalar = {
@@ -946,34 +946,34 @@ export type DraftSelectScalar = {
   leagueId?: boolean
   status?: boolean
   currentPickNumber?: boolean
-  currentUserId?: boolean
+  currentMemberId?: boolean
   turnDeadline?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type DraftOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "leagueId" | "status" | "currentPickNumber" | "currentUserId" | "turnDeadline" | "createdAt" | "updatedAt", ExtArgs["result"]["draft"]>
+export type DraftOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "leagueId" | "status" | "currentPickNumber" | "currentMemberId" | "turnDeadline" | "createdAt" | "updatedAt", ExtArgs["result"]["draft"]>
 export type DraftInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
-  currentUser?: boolean | Prisma.Draft$currentUserArgs<ExtArgs>
+  currentMember?: boolean | Prisma.Draft$currentMemberArgs<ExtArgs>
   picks?: boolean | Prisma.Draft$picksArgs<ExtArgs>
   chatMessages?: boolean | Prisma.Draft$chatMessagesArgs<ExtArgs>
   _count?: boolean | Prisma.DraftCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type DraftIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
-  currentUser?: boolean | Prisma.Draft$currentUserArgs<ExtArgs>
+  currentMember?: boolean | Prisma.Draft$currentMemberArgs<ExtArgs>
 }
 export type DraftIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
-  currentUser?: boolean | Prisma.Draft$currentUserArgs<ExtArgs>
+  currentMember?: boolean | Prisma.Draft$currentMemberArgs<ExtArgs>
 }
 
 export type $DraftPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Draft"
   objects: {
     league: Prisma.$LeaguePayload<ExtArgs>
-    currentUser: Prisma.$UserPayload<ExtArgs> | null
+    currentMember: Prisma.$LeagueMemberPayload<ExtArgs> | null
     picks: Prisma.$PickPayload<ExtArgs>[]
     chatMessages: Prisma.$ChatMessagePayload<ExtArgs>[]
   }
@@ -982,7 +982,7 @@ export type $DraftPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
     leagueId: string
     status: $Enums.DraftStatus
     currentPickNumber: number
-    currentUserId: string | null
+    currentMemberId: string | null
     turnDeadline: Date | null
     createdAt: Date
     updatedAt: Date
@@ -1381,7 +1381,7 @@ readonly fields: DraftFieldRefs;
 export interface Prisma__DraftClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   league<T extends Prisma.LeagueDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LeagueDefaultArgs<ExtArgs>>): Prisma.Prisma__LeagueClient<runtime.Types.Result.GetResult<Prisma.$LeaguePayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
-  currentUser<T extends Prisma.Draft$currentUserArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Draft$currentUserArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  currentMember<T extends Prisma.Draft$currentMemberArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Draft$currentMemberArgs<ExtArgs>>): Prisma.Prisma__LeagueMemberClient<runtime.Types.Result.GetResult<Prisma.$LeagueMemberPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   picks<T extends Prisma.Draft$picksArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Draft$picksArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PickPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   chatMessages<T extends Prisma.Draft$chatMessagesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Draft$chatMessagesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ChatMessagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
@@ -1417,7 +1417,7 @@ export interface DraftFieldRefs {
   readonly leagueId: Prisma.FieldRef<"Draft", 'String'>
   readonly status: Prisma.FieldRef<"Draft", 'DraftStatus'>
   readonly currentPickNumber: Prisma.FieldRef<"Draft", 'Int'>
-  readonly currentUserId: Prisma.FieldRef<"Draft", 'String'>
+  readonly currentMemberId: Prisma.FieldRef<"Draft", 'String'>
   readonly turnDeadline: Prisma.FieldRef<"Draft", 'DateTime'>
   readonly createdAt: Prisma.FieldRef<"Draft", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"Draft", 'DateTime'>
@@ -1822,22 +1822,22 @@ export type DraftDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.Interna
 }
 
 /**
- * Draft.currentUser
+ * Draft.currentMember
  */
-export type Draft$currentUserArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+export type Draft$currentMemberArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   /**
-   * Select specific fields to fetch from the User
+   * Select specific fields to fetch from the LeagueMember
    */
-  select?: Prisma.UserSelect<ExtArgs> | null
+  select?: Prisma.LeagueMemberSelect<ExtArgs> | null
   /**
-   * Omit specific fields from the User
+   * Omit specific fields from the LeagueMember
    */
-  omit?: Prisma.UserOmit<ExtArgs> | null
+  omit?: Prisma.LeagueMemberOmit<ExtArgs> | null
   /**
    * Choose, which related nodes to fetch as well
    */
-  include?: Prisma.UserInclude<ExtArgs> | null
-  where?: Prisma.UserWhereInput
+  include?: Prisma.LeagueMemberInclude<ExtArgs> | null
+  where?: Prisma.LeagueMemberWhereInput
 }
 
 /**

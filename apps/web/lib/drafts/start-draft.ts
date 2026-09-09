@@ -11,7 +11,13 @@ export interface StartDraftResult {
     leagueId: string;
     status: DraftStatus;
     currentPickNumber: number;
-    currentUserId: string;
+    // Phase 5.1: renamed from currentUserId — the first picker's own
+    // LeagueMember.id, not a User id. The fullness check just below
+    // (memberCount === teamCount) is unchanged: a BOT LeagueMember row
+    // counts toward that total exactly like a HUMAN row, so "full" already
+    // means "every slot occupied by a participant" with no special-casing
+    // for bots here.
+    currentMemberId: string;
     turnDeadline: string;
     createdAt: string;
   };
@@ -49,9 +55,13 @@ export async function startDraft(
       throw new DraftAlreadyExistsError();
     }
 
+    // Phase 5.1: a BOT LeagueMember row counts toward memberCount exactly
+    // like a HUMAN row (both are just LeagueMember rows), so this fullness
+    // check needs no change to support a mixed human/bot league — "full"
+    // already means "every slot 1..teamCount has a participant."
     const members = await tx.leagueMember.findMany({
       where: { leagueId },
-      select: { userId: true, draftSlot: true },
+      select: { id: true, draftSlot: true },
     });
     if (members.length !== league.teamCount) {
       throw new LeagueNotFullError();
@@ -71,7 +81,9 @@ export async function startDraft(
         leagueId,
         status: "ACTIVE",
         currentPickNumber: 1,
-        currentUserId: firstPicker.userId,
+        // The first picker's own LeagueMember.id — works identically
+        // whether that slot is occupied by a HUMAN or a BOT.
+        currentMemberId: firstPicker.id,
         turnDeadline,
       },
     });
@@ -82,7 +94,7 @@ export async function startDraft(
         leagueId: draft.leagueId,
         status: draft.status,
         currentPickNumber: draft.currentPickNumber,
-        currentUserId: firstPicker.userId,
+        currentMemberId: firstPicker.id,
         turnDeadline: turnDeadline.toISOString(),
         createdAt: draft.createdAt.toISOString(),
       },

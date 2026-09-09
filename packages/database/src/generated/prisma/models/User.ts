@@ -202,9 +202,7 @@ export type UserWhereInput = {
   sessions?: Prisma.SessionListRelationFilter
   ownedLeagues?: Prisma.LeagueListRelationFilter
   leagueMemberships?: Prisma.LeagueMemberListRelationFilter
-  picks?: Prisma.PickListRelationFilter
   chatMessages?: Prisma.ChatMessageListRelationFilter
-  currentTurnDrafts?: Prisma.DraftListRelationFilter
   socketTickets?: Prisma.SocketTicketListRelationFilter
 }
 
@@ -220,9 +218,7 @@ export type UserOrderByWithRelationInput = {
   sessions?: Prisma.SessionOrderByRelationAggregateInput
   ownedLeagues?: Prisma.LeagueOrderByRelationAggregateInput
   leagueMemberships?: Prisma.LeagueMemberOrderByRelationAggregateInput
-  picks?: Prisma.PickOrderByRelationAggregateInput
   chatMessages?: Prisma.ChatMessageOrderByRelationAggregateInput
-  currentTurnDrafts?: Prisma.DraftOrderByRelationAggregateInput
   socketTickets?: Prisma.SocketTicketOrderByRelationAggregateInput
 }
 
@@ -241,9 +237,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   sessions?: Prisma.SessionListRelationFilter
   ownedLeagues?: Prisma.LeagueListRelationFilter
   leagueMemberships?: Prisma.LeagueMemberListRelationFilter
-  picks?: Prisma.PickListRelationFilter
   chatMessages?: Prisma.ChatMessageListRelationFilter
-  currentTurnDrafts?: Prisma.DraftListRelationFilter
   socketTickets?: Prisma.SocketTicketListRelationFilter
 }, "id" | "email">
 
@@ -285,9 +279,7 @@ export type UserCreateInput = {
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
 }
 
@@ -303,9 +295,7 @@ export type UserUncheckedCreateInput = {
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -321,9 +311,7 @@ export type UserUpdateInput = {
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
 }
 
@@ -339,9 +327,7 @@ export type UserUncheckedUpdateInput = {
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -479,42 +465,14 @@ export type UserCreateNestedOneWithoutLeagueMembershipsInput = {
   connect?: Prisma.UserWhereUniqueInput
 }
 
-export type UserUpdateOneRequiredWithoutLeagueMembershipsNestedInput = {
+export type UserUpdateOneWithoutLeagueMembershipsNestedInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutLeagueMembershipsInput, Prisma.UserUncheckedCreateWithoutLeagueMembershipsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutLeagueMembershipsInput
   upsert?: Prisma.UserUpsertWithoutLeagueMembershipsInput
-  connect?: Prisma.UserWhereUniqueInput
-  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutLeagueMembershipsInput, Prisma.UserUpdateWithoutLeagueMembershipsInput>, Prisma.UserUncheckedUpdateWithoutLeagueMembershipsInput>
-}
-
-export type UserCreateNestedOneWithoutCurrentTurnDraftsInput = {
-  create?: Prisma.XOR<Prisma.UserCreateWithoutCurrentTurnDraftsInput, Prisma.UserUncheckedCreateWithoutCurrentTurnDraftsInput>
-  connectOrCreate?: Prisma.UserCreateOrConnectWithoutCurrentTurnDraftsInput
-  connect?: Prisma.UserWhereUniqueInput
-}
-
-export type UserUpdateOneWithoutCurrentTurnDraftsNestedInput = {
-  create?: Prisma.XOR<Prisma.UserCreateWithoutCurrentTurnDraftsInput, Prisma.UserUncheckedCreateWithoutCurrentTurnDraftsInput>
-  connectOrCreate?: Prisma.UserCreateOrConnectWithoutCurrentTurnDraftsInput
-  upsert?: Prisma.UserUpsertWithoutCurrentTurnDraftsInput
   disconnect?: Prisma.UserWhereInput | boolean
   delete?: Prisma.UserWhereInput | boolean
   connect?: Prisma.UserWhereUniqueInput
-  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutCurrentTurnDraftsInput, Prisma.UserUpdateWithoutCurrentTurnDraftsInput>, Prisma.UserUncheckedUpdateWithoutCurrentTurnDraftsInput>
-}
-
-export type UserCreateNestedOneWithoutPicksInput = {
-  create?: Prisma.XOR<Prisma.UserCreateWithoutPicksInput, Prisma.UserUncheckedCreateWithoutPicksInput>
-  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPicksInput
-  connect?: Prisma.UserWhereUniqueInput
-}
-
-export type UserUpdateOneRequiredWithoutPicksNestedInput = {
-  create?: Prisma.XOR<Prisma.UserCreateWithoutPicksInput, Prisma.UserUncheckedCreateWithoutPicksInput>
-  connectOrCreate?: Prisma.UserCreateOrConnectWithoutPicksInput
-  upsert?: Prisma.UserUpsertWithoutPicksInput
-  connect?: Prisma.UserWhereUniqueInput
-  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutPicksInput, Prisma.UserUpdateWithoutPicksInput>, Prisma.UserUncheckedUpdateWithoutPicksInput>
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutLeagueMembershipsInput, Prisma.UserUpdateWithoutLeagueMembershipsInput>, Prisma.UserUncheckedUpdateWithoutLeagueMembershipsInput>
 }
 
 export type UserCreateNestedOneWithoutSocketTicketsInput = {
@@ -556,9 +514,7 @@ export type UserCreateWithoutAccountsInput = {
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
 }
 
@@ -573,9 +529,7 @@ export type UserUncheckedCreateWithoutAccountsInput = {
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -606,9 +560,7 @@ export type UserUpdateWithoutAccountsInput = {
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
 }
 
@@ -623,9 +575,7 @@ export type UserUncheckedUpdateWithoutAccountsInput = {
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -640,9 +590,7 @@ export type UserCreateWithoutSessionsInput = {
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
 }
 
@@ -657,9 +605,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -690,9 +636,7 @@ export type UserUpdateWithoutSessionsInput = {
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
 }
 
@@ -707,9 +651,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -724,9 +666,7 @@ export type UserCreateWithoutOwnedLeaguesInput = {
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
 }
 
@@ -741,9 +681,7 @@ export type UserUncheckedCreateWithoutOwnedLeaguesInput = {
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -774,9 +712,7 @@ export type UserUpdateWithoutOwnedLeaguesInput = {
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
 }
 
@@ -791,9 +727,7 @@ export type UserUncheckedUpdateWithoutOwnedLeaguesInput = {
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -808,9 +742,7 @@ export type UserCreateWithoutLeagueMembershipsInput = {
   accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
 }
 
@@ -825,9 +757,7 @@ export type UserUncheckedCreateWithoutLeagueMembershipsInput = {
   accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -858,9 +788,7 @@ export type UserUpdateWithoutLeagueMembershipsInput = {
   accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
 }
 
@@ -875,177 +803,7 @@ export type UserUncheckedUpdateWithoutLeagueMembershipsInput = {
   accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
-  socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
-}
-
-export type UserCreateWithoutCurrentTurnDraftsInput = {
-  id?: string
-  email: string
-  name: string
-  emailVerified?: Date | string | null
-  image?: string | null
-  createdAt?: Date | string
-  updatedAt?: Date | string
-  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
-  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
-  ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
-  leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
-  chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
-}
-
-export type UserUncheckedCreateWithoutCurrentTurnDraftsInput = {
-  id?: string
-  email: string
-  name: string
-  emailVerified?: Date | string | null
-  image?: string | null
-  createdAt?: Date | string
-  updatedAt?: Date | string
-  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
-  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
-  ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
-  leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
-  chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
-}
-
-export type UserCreateOrConnectWithoutCurrentTurnDraftsInput = {
-  where: Prisma.UserWhereUniqueInput
-  create: Prisma.XOR<Prisma.UserCreateWithoutCurrentTurnDraftsInput, Prisma.UserUncheckedCreateWithoutCurrentTurnDraftsInput>
-}
-
-export type UserUpsertWithoutCurrentTurnDraftsInput = {
-  update: Prisma.XOR<Prisma.UserUpdateWithoutCurrentTurnDraftsInput, Prisma.UserUncheckedUpdateWithoutCurrentTurnDraftsInput>
-  create: Prisma.XOR<Prisma.UserCreateWithoutCurrentTurnDraftsInput, Prisma.UserUncheckedCreateWithoutCurrentTurnDraftsInput>
-  where?: Prisma.UserWhereInput
-}
-
-export type UserUpdateToOneWithWhereWithoutCurrentTurnDraftsInput = {
-  where?: Prisma.UserWhereInput
-  data: Prisma.XOR<Prisma.UserUpdateWithoutCurrentTurnDraftsInput, Prisma.UserUncheckedUpdateWithoutCurrentTurnDraftsInput>
-}
-
-export type UserUpdateWithoutCurrentTurnDraftsInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  email?: Prisma.StringFieldUpdateOperationsInput | string
-  name?: Prisma.StringFieldUpdateOperationsInput | string
-  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
-  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
-  ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
-  leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
-  chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
-}
-
-export type UserUncheckedUpdateWithoutCurrentTurnDraftsInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  email?: Prisma.StringFieldUpdateOperationsInput | string
-  name?: Prisma.StringFieldUpdateOperationsInput | string
-  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
-  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
-  ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
-  leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
-  chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
-}
-
-export type UserCreateWithoutPicksInput = {
-  id?: string
-  email: string
-  name: string
-  emailVerified?: Date | string | null
-  image?: string | null
-  createdAt?: Date | string
-  updatedAt?: Date | string
-  accounts?: Prisma.AccountCreateNestedManyWithoutUserInput
-  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
-  ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
-  leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
-  socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
-}
-
-export type UserUncheckedCreateWithoutPicksInput = {
-  id?: string
-  email: string
-  name: string
-  emailVerified?: Date | string | null
-  image?: string | null
-  createdAt?: Date | string
-  updatedAt?: Date | string
-  accounts?: Prisma.AccountUncheckedCreateNestedManyWithoutUserInput
-  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
-  ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
-  leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
-  socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
-}
-
-export type UserCreateOrConnectWithoutPicksInput = {
-  where: Prisma.UserWhereUniqueInput
-  create: Prisma.XOR<Prisma.UserCreateWithoutPicksInput, Prisma.UserUncheckedCreateWithoutPicksInput>
-}
-
-export type UserUpsertWithoutPicksInput = {
-  update: Prisma.XOR<Prisma.UserUpdateWithoutPicksInput, Prisma.UserUncheckedUpdateWithoutPicksInput>
-  create: Prisma.XOR<Prisma.UserCreateWithoutPicksInput, Prisma.UserUncheckedCreateWithoutPicksInput>
-  where?: Prisma.UserWhereInput
-}
-
-export type UserUpdateToOneWithWhereWithoutPicksInput = {
-  where?: Prisma.UserWhereInput
-  data: Prisma.XOR<Prisma.UserUpdateWithoutPicksInput, Prisma.UserUncheckedUpdateWithoutPicksInput>
-}
-
-export type UserUpdateWithoutPicksInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  email?: Prisma.StringFieldUpdateOperationsInput | string
-  name?: Prisma.StringFieldUpdateOperationsInput | string
-  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  accounts?: Prisma.AccountUpdateManyWithoutUserNestedInput
-  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
-  ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
-  leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
-  socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
-}
-
-export type UserUncheckedUpdateWithoutPicksInput = {
-  id?: Prisma.StringFieldUpdateOperationsInput | string
-  email?: Prisma.StringFieldUpdateOperationsInput | string
-  name?: Prisma.StringFieldUpdateOperationsInput | string
-  emailVerified?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
-  image?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  accounts?: Prisma.AccountUncheckedUpdateManyWithoutUserNestedInput
-  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
-  ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
-  leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1061,9 +819,7 @@ export type UserCreateWithoutSocketTicketsInput = {
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
 }
 
 export type UserUncheckedCreateWithoutSocketTicketsInput = {
@@ -1078,9 +834,7 @@ export type UserUncheckedCreateWithoutSocketTicketsInput = {
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
   chatMessages?: Prisma.ChatMessageUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
 }
 
 export type UserCreateOrConnectWithoutSocketTicketsInput = {
@@ -1111,9 +865,7 @@ export type UserUpdateWithoutSocketTicketsInput = {
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSocketTicketsInput = {
@@ -1128,9 +880,7 @@ export type UserUncheckedUpdateWithoutSocketTicketsInput = {
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
   chatMessages?: Prisma.ChatMessageUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
 }
 
 export type UserCreateWithoutChatMessagesInput = {
@@ -1145,8 +895,6 @@ export type UserCreateWithoutChatMessagesInput = {
   sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketCreateNestedManyWithoutUserInput
 }
 
@@ -1162,8 +910,6 @@ export type UserUncheckedCreateWithoutChatMessagesInput = {
   sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
   ownedLeagues?: Prisma.LeagueUncheckedCreateNestedManyWithoutOwnerInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedCreateNestedManyWithoutUserInput
-  picks?: Prisma.PickUncheckedCreateNestedManyWithoutUserInput
-  currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentUserInput
   socketTickets?: Prisma.SocketTicketUncheckedCreateNestedManyWithoutUserInput
 }
 
@@ -1195,8 +941,6 @@ export type UserUpdateWithoutChatMessagesInput = {
   sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUpdateManyWithoutUserNestedInput
 }
 
@@ -1212,8 +956,6 @@ export type UserUncheckedUpdateWithoutChatMessagesInput = {
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   ownedLeagues?: Prisma.LeagueUncheckedUpdateManyWithoutOwnerNestedInput
   leagueMemberships?: Prisma.LeagueMemberUncheckedUpdateManyWithoutUserNestedInput
-  picks?: Prisma.PickUncheckedUpdateManyWithoutUserNestedInput
-  currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentUserNestedInput
   socketTickets?: Prisma.SocketTicketUncheckedUpdateManyWithoutUserNestedInput
 }
 
@@ -1227,9 +969,7 @@ export type UserCountOutputType = {
   sessions: number
   ownedLeagues: number
   leagueMemberships: number
-  picks: number
   chatMessages: number
-  currentTurnDrafts: number
   socketTickets: number
 }
 
@@ -1238,9 +978,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   sessions?: boolean | UserCountOutputTypeCountSessionsArgs
   ownedLeagues?: boolean | UserCountOutputTypeCountOwnedLeaguesArgs
   leagueMemberships?: boolean | UserCountOutputTypeCountLeagueMembershipsArgs
-  picks?: boolean | UserCountOutputTypeCountPicksArgs
   chatMessages?: boolean | UserCountOutputTypeCountChatMessagesArgs
-  currentTurnDrafts?: boolean | UserCountOutputTypeCountCurrentTurnDraftsArgs
   socketTickets?: boolean | UserCountOutputTypeCountSocketTicketsArgs
 }
 
@@ -1285,22 +1023,8 @@ export type UserCountOutputTypeCountLeagueMembershipsArgs<ExtArgs extends runtim
 /**
  * UserCountOutputType without action
  */
-export type UserCountOutputTypeCountPicksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  where?: Prisma.PickWhereInput
-}
-
-/**
- * UserCountOutputType without action
- */
 export type UserCountOutputTypeCountChatMessagesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.ChatMessageWhereInput
-}
-
-/**
- * UserCountOutputType without action
- */
-export type UserCountOutputTypeCountCurrentTurnDraftsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  where?: Prisma.DraftWhereInput
 }
 
 /**
@@ -1323,9 +1047,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   ownedLeagues?: boolean | Prisma.User$ownedLeaguesArgs<ExtArgs>
   leagueMemberships?: boolean | Prisma.User$leagueMembershipsArgs<ExtArgs>
-  picks?: boolean | Prisma.User$picksArgs<ExtArgs>
   chatMessages?: boolean | Prisma.User$chatMessagesArgs<ExtArgs>
-  currentTurnDrafts?: boolean | Prisma.User$currentTurnDraftsArgs<ExtArgs>
   socketTickets?: boolean | Prisma.User$socketTicketsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
@@ -1366,9 +1088,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   sessions?: boolean | Prisma.User$sessionsArgs<ExtArgs>
   ownedLeagues?: boolean | Prisma.User$ownedLeaguesArgs<ExtArgs>
   leagueMemberships?: boolean | Prisma.User$leagueMembershipsArgs<ExtArgs>
-  picks?: boolean | Prisma.User$picksArgs<ExtArgs>
   chatMessages?: boolean | Prisma.User$chatMessagesArgs<ExtArgs>
-  currentTurnDrafts?: boolean | Prisma.User$currentTurnDraftsArgs<ExtArgs>
   socketTickets?: boolean | Prisma.User$socketTicketsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
@@ -1382,9 +1102,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     sessions: Prisma.$SessionPayload<ExtArgs>[]
     ownedLeagues: Prisma.$LeaguePayload<ExtArgs>[]
     leagueMemberships: Prisma.$LeagueMemberPayload<ExtArgs>[]
-    picks: Prisma.$PickPayload<ExtArgs>[]
     chatMessages: Prisma.$ChatMessagePayload<ExtArgs>[]
-    currentTurnDrafts: Prisma.$DraftPayload<ExtArgs>[]
     socketTickets: Prisma.$SocketTicketPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
@@ -1793,9 +1511,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   sessions<T extends Prisma.User$sessionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$sessionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SessionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   ownedLeagues<T extends Prisma.User$ownedLeaguesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$ownedLeaguesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LeaguePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   leagueMemberships<T extends Prisma.User$leagueMembershipsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$leagueMembershipsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LeagueMemberPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
-  picks<T extends Prisma.User$picksArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$picksArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PickPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   chatMessages<T extends Prisma.User$chatMessagesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$chatMessagesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ChatMessagePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
-  currentTurnDrafts<T extends Prisma.User$currentTurnDraftsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$currentTurnDraftsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$DraftPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   socketTickets<T extends Prisma.User$socketTicketsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$socketTicketsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SocketTicketPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -2322,30 +2038,6 @@ export type User$leagueMembershipsArgs<ExtArgs extends runtime.Types.Extensions.
 }
 
 /**
- * User.picks
- */
-export type User$picksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  /**
-   * Select specific fields to fetch from the Pick
-   */
-  select?: Prisma.PickSelect<ExtArgs> | null
-  /**
-   * Omit specific fields from the Pick
-   */
-  omit?: Prisma.PickOmit<ExtArgs> | null
-  /**
-   * Choose, which related nodes to fetch as well
-   */
-  include?: Prisma.PickInclude<ExtArgs> | null
-  where?: Prisma.PickWhereInput
-  orderBy?: Prisma.PickOrderByWithRelationInput | Prisma.PickOrderByWithRelationInput[]
-  cursor?: Prisma.PickWhereUniqueInput
-  take?: number
-  skip?: number
-  distinct?: Prisma.PickScalarFieldEnum | Prisma.PickScalarFieldEnum[]
-}
-
-/**
  * User.chatMessages
  */
 export type User$chatMessagesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -2367,30 +2059,6 @@ export type User$chatMessagesArgs<ExtArgs extends runtime.Types.Extensions.Inter
   take?: number
   skip?: number
   distinct?: Prisma.ChatMessageScalarFieldEnum | Prisma.ChatMessageScalarFieldEnum[]
-}
-
-/**
- * User.currentTurnDrafts
- */
-export type User$currentTurnDraftsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
-  /**
-   * Select specific fields to fetch from the Draft
-   */
-  select?: Prisma.DraftSelect<ExtArgs> | null
-  /**
-   * Omit specific fields from the Draft
-   */
-  omit?: Prisma.DraftOmit<ExtArgs> | null
-  /**
-   * Choose, which related nodes to fetch as well
-   */
-  include?: Prisma.DraftInclude<ExtArgs> | null
-  where?: Prisma.DraftWhereInput
-  orderBy?: Prisma.DraftOrderByWithRelationInput | Prisma.DraftOrderByWithRelationInput[]
-  cursor?: Prisma.DraftWhereUniqueInput
-  take?: number
-  skip?: number
-  distinct?: Prisma.DraftScalarFieldEnum | Prisma.DraftScalarFieldEnum[]
 }
 
 /**

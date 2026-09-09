@@ -38,7 +38,7 @@ export type PickMinAggregateOutputType = {
   id: string | null
   draftId: string | null
   pickNumber: number | null
-  userId: string | null
+  leagueMemberId: string | null
   playerId: string | null
   wasAutopick: boolean | null
   createdAt: Date | null
@@ -48,7 +48,7 @@ export type PickMaxAggregateOutputType = {
   id: string | null
   draftId: string | null
   pickNumber: number | null
-  userId: string | null
+  leagueMemberId: string | null
   playerId: string | null
   wasAutopick: boolean | null
   createdAt: Date | null
@@ -58,7 +58,7 @@ export type PickCountAggregateOutputType = {
   id: number
   draftId: number
   pickNumber: number
-  userId: number
+  leagueMemberId: number
   playerId: number
   wasAutopick: number
   createdAt: number
@@ -78,7 +78,7 @@ export type PickMinAggregateInputType = {
   id?: true
   draftId?: true
   pickNumber?: true
-  userId?: true
+  leagueMemberId?: true
   playerId?: true
   wasAutopick?: true
   createdAt?: true
@@ -88,7 +88,7 @@ export type PickMaxAggregateInputType = {
   id?: true
   draftId?: true
   pickNumber?: true
-  userId?: true
+  leagueMemberId?: true
   playerId?: true
   wasAutopick?: true
   createdAt?: true
@@ -98,7 +98,7 @@ export type PickCountAggregateInputType = {
   id?: true
   draftId?: true
   pickNumber?: true
-  userId?: true
+  leagueMemberId?: true
   playerId?: true
   wasAutopick?: true
   createdAt?: true
@@ -195,7 +195,7 @@ export type PickGroupByOutputType = {
   id: string
   draftId: string
   pickNumber: number
-  userId: string
+  leagueMemberId: string
   playerId: string
   wasAutopick: boolean
   createdAt: Date
@@ -228,12 +228,12 @@ export type PickWhereInput = {
   id?: Prisma.StringFilter<"Pick"> | string
   draftId?: Prisma.StringFilter<"Pick"> | string
   pickNumber?: Prisma.IntFilter<"Pick"> | number
-  userId?: Prisma.StringFilter<"Pick"> | string
+  leagueMemberId?: Prisma.StringFilter<"Pick"> | string
   playerId?: Prisma.StringFilter<"Pick"> | string
   wasAutopick?: Prisma.BoolFilter<"Pick"> | boolean
   createdAt?: Prisma.DateTimeFilter<"Pick"> | Date | string
   draft?: Prisma.XOR<Prisma.DraftScalarRelationFilter, Prisma.DraftWhereInput>
-  user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
+  leagueMember?: Prisma.XOR<Prisma.LeagueMemberScalarRelationFilter, Prisma.LeagueMemberWhereInput>
   player?: Prisma.XOR<Prisma.PlayerScalarRelationFilter, Prisma.PlayerWhereInput>
 }
 
@@ -241,12 +241,12 @@ export type PickOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   draftId?: Prisma.SortOrder
   pickNumber?: Prisma.SortOrder
-  userId?: Prisma.SortOrder
+  leagueMemberId?: Prisma.SortOrder
   playerId?: Prisma.SortOrder
   wasAutopick?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   draft?: Prisma.DraftOrderByWithRelationInput
-  user?: Prisma.UserOrderByWithRelationInput
+  leagueMember?: Prisma.LeagueMemberOrderByWithRelationInput
   player?: Prisma.PlayerOrderByWithRelationInput
 }
 
@@ -259,12 +259,12 @@ export type PickWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.PickWhereInput | Prisma.PickWhereInput[]
   draftId?: Prisma.StringFilter<"Pick"> | string
   pickNumber?: Prisma.IntFilter<"Pick"> | number
-  userId?: Prisma.StringFilter<"Pick"> | string
+  leagueMemberId?: Prisma.StringFilter<"Pick"> | string
   playerId?: Prisma.StringFilter<"Pick"> | string
   wasAutopick?: Prisma.BoolFilter<"Pick"> | boolean
   createdAt?: Prisma.DateTimeFilter<"Pick"> | Date | string
   draft?: Prisma.XOR<Prisma.DraftScalarRelationFilter, Prisma.DraftWhereInput>
-  user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
+  leagueMember?: Prisma.XOR<Prisma.LeagueMemberScalarRelationFilter, Prisma.LeagueMemberWhereInput>
   player?: Prisma.XOR<Prisma.PlayerScalarRelationFilter, Prisma.PlayerWhereInput>
 }, "id" | "draftId_playerId" | "draftId_pickNumber">
 
@@ -272,7 +272,7 @@ export type PickOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   draftId?: Prisma.SortOrder
   pickNumber?: Prisma.SortOrder
-  userId?: Prisma.SortOrder
+  leagueMemberId?: Prisma.SortOrder
   playerId?: Prisma.SortOrder
   wasAutopick?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -290,7 +290,7 @@ export type PickScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"Pick"> | string
   draftId?: Prisma.StringWithAggregatesFilter<"Pick"> | string
   pickNumber?: Prisma.IntWithAggregatesFilter<"Pick"> | number
-  userId?: Prisma.StringWithAggregatesFilter<"Pick"> | string
+  leagueMemberId?: Prisma.StringWithAggregatesFilter<"Pick"> | string
   playerId?: Prisma.StringWithAggregatesFilter<"Pick"> | string
   wasAutopick?: Prisma.BoolWithAggregatesFilter<"Pick"> | boolean
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Pick"> | Date | string
@@ -302,7 +302,7 @@ export type PickCreateInput = {
   wasAutopick?: boolean
   createdAt?: Date | string
   draft: Prisma.DraftCreateNestedOneWithoutPicksInput
-  user: Prisma.UserCreateNestedOneWithoutPicksInput
+  leagueMember: Prisma.LeagueMemberCreateNestedOneWithoutPicksInput
   player: Prisma.PlayerCreateNestedOneWithoutPicksInput
 }
 
@@ -310,7 +310,7 @@ export type PickUncheckedCreateInput = {
   id?: string
   draftId: string
   pickNumber: number
-  userId: string
+  leagueMemberId: string
   playerId: string
   wasAutopick?: boolean
   createdAt?: Date | string
@@ -322,7 +322,7 @@ export type PickUpdateInput = {
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   draft?: Prisma.DraftUpdateOneRequiredWithoutPicksNestedInput
-  user?: Prisma.UserUpdateOneRequiredWithoutPicksNestedInput
+  leagueMember?: Prisma.LeagueMemberUpdateOneRequiredWithoutPicksNestedInput
   player?: Prisma.PlayerUpdateOneRequiredWithoutPicksNestedInput
 }
 
@@ -330,7 +330,7 @@ export type PickUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   draftId?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  leagueMemberId?: Prisma.StringFieldUpdateOperationsInput | string
   playerId?: Prisma.StringFieldUpdateOperationsInput | string
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -340,7 +340,7 @@ export type PickCreateManyInput = {
   id?: string
   draftId: string
   pickNumber: number
-  userId: string
+  leagueMemberId: string
   playerId: string
   wasAutopick?: boolean
   createdAt?: Date | string
@@ -357,7 +357,7 @@ export type PickUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   draftId?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  leagueMemberId?: Prisma.StringFieldUpdateOperationsInput | string
   playerId?: Prisma.StringFieldUpdateOperationsInput | string
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -387,7 +387,7 @@ export type PickCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   draftId?: Prisma.SortOrder
   pickNumber?: Prisma.SortOrder
-  userId?: Prisma.SortOrder
+  leagueMemberId?: Prisma.SortOrder
   playerId?: Prisma.SortOrder
   wasAutopick?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -401,7 +401,7 @@ export type PickMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
   draftId?: Prisma.SortOrder
   pickNumber?: Prisma.SortOrder
-  userId?: Prisma.SortOrder
+  leagueMemberId?: Prisma.SortOrder
   playerId?: Prisma.SortOrder
   wasAutopick?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -411,7 +411,7 @@ export type PickMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
   draftId?: Prisma.SortOrder
   pickNumber?: Prisma.SortOrder
-  userId?: Prisma.SortOrder
+  leagueMemberId?: Prisma.SortOrder
   playerId?: Prisma.SortOrder
   wasAutopick?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -421,45 +421,45 @@ export type PickSumOrderByAggregateInput = {
   pickNumber?: Prisma.SortOrder
 }
 
-export type PickCreateNestedManyWithoutUserInput = {
-  create?: Prisma.XOR<Prisma.PickCreateWithoutUserInput, Prisma.PickUncheckedCreateWithoutUserInput> | Prisma.PickCreateWithoutUserInput[] | Prisma.PickUncheckedCreateWithoutUserInput[]
-  connectOrCreate?: Prisma.PickCreateOrConnectWithoutUserInput | Prisma.PickCreateOrConnectWithoutUserInput[]
-  createMany?: Prisma.PickCreateManyUserInputEnvelope
+export type PickCreateNestedManyWithoutLeagueMemberInput = {
+  create?: Prisma.XOR<Prisma.PickCreateWithoutLeagueMemberInput, Prisma.PickUncheckedCreateWithoutLeagueMemberInput> | Prisma.PickCreateWithoutLeagueMemberInput[] | Prisma.PickUncheckedCreateWithoutLeagueMemberInput[]
+  connectOrCreate?: Prisma.PickCreateOrConnectWithoutLeagueMemberInput | Prisma.PickCreateOrConnectWithoutLeagueMemberInput[]
+  createMany?: Prisma.PickCreateManyLeagueMemberInputEnvelope
   connect?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
 }
 
-export type PickUncheckedCreateNestedManyWithoutUserInput = {
-  create?: Prisma.XOR<Prisma.PickCreateWithoutUserInput, Prisma.PickUncheckedCreateWithoutUserInput> | Prisma.PickCreateWithoutUserInput[] | Prisma.PickUncheckedCreateWithoutUserInput[]
-  connectOrCreate?: Prisma.PickCreateOrConnectWithoutUserInput | Prisma.PickCreateOrConnectWithoutUserInput[]
-  createMany?: Prisma.PickCreateManyUserInputEnvelope
+export type PickUncheckedCreateNestedManyWithoutLeagueMemberInput = {
+  create?: Prisma.XOR<Prisma.PickCreateWithoutLeagueMemberInput, Prisma.PickUncheckedCreateWithoutLeagueMemberInput> | Prisma.PickCreateWithoutLeagueMemberInput[] | Prisma.PickUncheckedCreateWithoutLeagueMemberInput[]
+  connectOrCreate?: Prisma.PickCreateOrConnectWithoutLeagueMemberInput | Prisma.PickCreateOrConnectWithoutLeagueMemberInput[]
+  createMany?: Prisma.PickCreateManyLeagueMemberInputEnvelope
   connect?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
 }
 
-export type PickUpdateManyWithoutUserNestedInput = {
-  create?: Prisma.XOR<Prisma.PickCreateWithoutUserInput, Prisma.PickUncheckedCreateWithoutUserInput> | Prisma.PickCreateWithoutUserInput[] | Prisma.PickUncheckedCreateWithoutUserInput[]
-  connectOrCreate?: Prisma.PickCreateOrConnectWithoutUserInput | Prisma.PickCreateOrConnectWithoutUserInput[]
-  upsert?: Prisma.PickUpsertWithWhereUniqueWithoutUserInput | Prisma.PickUpsertWithWhereUniqueWithoutUserInput[]
-  createMany?: Prisma.PickCreateManyUserInputEnvelope
+export type PickUpdateManyWithoutLeagueMemberNestedInput = {
+  create?: Prisma.XOR<Prisma.PickCreateWithoutLeagueMemberInput, Prisma.PickUncheckedCreateWithoutLeagueMemberInput> | Prisma.PickCreateWithoutLeagueMemberInput[] | Prisma.PickUncheckedCreateWithoutLeagueMemberInput[]
+  connectOrCreate?: Prisma.PickCreateOrConnectWithoutLeagueMemberInput | Prisma.PickCreateOrConnectWithoutLeagueMemberInput[]
+  upsert?: Prisma.PickUpsertWithWhereUniqueWithoutLeagueMemberInput | Prisma.PickUpsertWithWhereUniqueWithoutLeagueMemberInput[]
+  createMany?: Prisma.PickCreateManyLeagueMemberInputEnvelope
   set?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
   disconnect?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
   delete?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
   connect?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
-  update?: Prisma.PickUpdateWithWhereUniqueWithoutUserInput | Prisma.PickUpdateWithWhereUniqueWithoutUserInput[]
-  updateMany?: Prisma.PickUpdateManyWithWhereWithoutUserInput | Prisma.PickUpdateManyWithWhereWithoutUserInput[]
+  update?: Prisma.PickUpdateWithWhereUniqueWithoutLeagueMemberInput | Prisma.PickUpdateWithWhereUniqueWithoutLeagueMemberInput[]
+  updateMany?: Prisma.PickUpdateManyWithWhereWithoutLeagueMemberInput | Prisma.PickUpdateManyWithWhereWithoutLeagueMemberInput[]
   deleteMany?: Prisma.PickScalarWhereInput | Prisma.PickScalarWhereInput[]
 }
 
-export type PickUncheckedUpdateManyWithoutUserNestedInput = {
-  create?: Prisma.XOR<Prisma.PickCreateWithoutUserInput, Prisma.PickUncheckedCreateWithoutUserInput> | Prisma.PickCreateWithoutUserInput[] | Prisma.PickUncheckedCreateWithoutUserInput[]
-  connectOrCreate?: Prisma.PickCreateOrConnectWithoutUserInput | Prisma.PickCreateOrConnectWithoutUserInput[]
-  upsert?: Prisma.PickUpsertWithWhereUniqueWithoutUserInput | Prisma.PickUpsertWithWhereUniqueWithoutUserInput[]
-  createMany?: Prisma.PickCreateManyUserInputEnvelope
+export type PickUncheckedUpdateManyWithoutLeagueMemberNestedInput = {
+  create?: Prisma.XOR<Prisma.PickCreateWithoutLeagueMemberInput, Prisma.PickUncheckedCreateWithoutLeagueMemberInput> | Prisma.PickCreateWithoutLeagueMemberInput[] | Prisma.PickUncheckedCreateWithoutLeagueMemberInput[]
+  connectOrCreate?: Prisma.PickCreateOrConnectWithoutLeagueMemberInput | Prisma.PickCreateOrConnectWithoutLeagueMemberInput[]
+  upsert?: Prisma.PickUpsertWithWhereUniqueWithoutLeagueMemberInput | Prisma.PickUpsertWithWhereUniqueWithoutLeagueMemberInput[]
+  createMany?: Prisma.PickCreateManyLeagueMemberInputEnvelope
   set?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
   disconnect?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
   delete?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
   connect?: Prisma.PickWhereUniqueInput | Prisma.PickWhereUniqueInput[]
-  update?: Prisma.PickUpdateWithWhereUniqueWithoutUserInput | Prisma.PickUpdateWithWhereUniqueWithoutUserInput[]
-  updateMany?: Prisma.PickUpdateManyWithWhereWithoutUserInput | Prisma.PickUpdateManyWithWhereWithoutUserInput[]
+  update?: Prisma.PickUpdateWithWhereUniqueWithoutLeagueMemberInput | Prisma.PickUpdateWithWhereUniqueWithoutLeagueMemberInput[]
+  updateMany?: Prisma.PickUpdateManyWithWhereWithoutLeagueMemberInput | Prisma.PickUpdateManyWithWhereWithoutLeagueMemberInput[]
   deleteMany?: Prisma.PickScalarWhereInput | Prisma.PickScalarWhereInput[]
 }
 
@@ -551,7 +551,7 @@ export type BoolFieldUpdateOperationsInput = {
   set?: boolean
 }
 
-export type PickCreateWithoutUserInput = {
+export type PickCreateWithoutLeagueMemberInput = {
   id?: string
   pickNumber: number
   wasAutopick?: boolean
@@ -560,7 +560,7 @@ export type PickCreateWithoutUserInput = {
   player: Prisma.PlayerCreateNestedOneWithoutPicksInput
 }
 
-export type PickUncheckedCreateWithoutUserInput = {
+export type PickUncheckedCreateWithoutLeagueMemberInput = {
   id?: string
   draftId: string
   pickNumber: number
@@ -569,30 +569,30 @@ export type PickUncheckedCreateWithoutUserInput = {
   createdAt?: Date | string
 }
 
-export type PickCreateOrConnectWithoutUserInput = {
+export type PickCreateOrConnectWithoutLeagueMemberInput = {
   where: Prisma.PickWhereUniqueInput
-  create: Prisma.XOR<Prisma.PickCreateWithoutUserInput, Prisma.PickUncheckedCreateWithoutUserInput>
+  create: Prisma.XOR<Prisma.PickCreateWithoutLeagueMemberInput, Prisma.PickUncheckedCreateWithoutLeagueMemberInput>
 }
 
-export type PickCreateManyUserInputEnvelope = {
-  data: Prisma.PickCreateManyUserInput | Prisma.PickCreateManyUserInput[]
+export type PickCreateManyLeagueMemberInputEnvelope = {
+  data: Prisma.PickCreateManyLeagueMemberInput | Prisma.PickCreateManyLeagueMemberInput[]
   skipDuplicates?: boolean
 }
 
-export type PickUpsertWithWhereUniqueWithoutUserInput = {
+export type PickUpsertWithWhereUniqueWithoutLeagueMemberInput = {
   where: Prisma.PickWhereUniqueInput
-  update: Prisma.XOR<Prisma.PickUpdateWithoutUserInput, Prisma.PickUncheckedUpdateWithoutUserInput>
-  create: Prisma.XOR<Prisma.PickCreateWithoutUserInput, Prisma.PickUncheckedCreateWithoutUserInput>
+  update: Prisma.XOR<Prisma.PickUpdateWithoutLeagueMemberInput, Prisma.PickUncheckedUpdateWithoutLeagueMemberInput>
+  create: Prisma.XOR<Prisma.PickCreateWithoutLeagueMemberInput, Prisma.PickUncheckedCreateWithoutLeagueMemberInput>
 }
 
-export type PickUpdateWithWhereUniqueWithoutUserInput = {
+export type PickUpdateWithWhereUniqueWithoutLeagueMemberInput = {
   where: Prisma.PickWhereUniqueInput
-  data: Prisma.XOR<Prisma.PickUpdateWithoutUserInput, Prisma.PickUncheckedUpdateWithoutUserInput>
+  data: Prisma.XOR<Prisma.PickUpdateWithoutLeagueMemberInput, Prisma.PickUncheckedUpdateWithoutLeagueMemberInput>
 }
 
-export type PickUpdateManyWithWhereWithoutUserInput = {
+export type PickUpdateManyWithWhereWithoutLeagueMemberInput = {
   where: Prisma.PickScalarWhereInput
-  data: Prisma.XOR<Prisma.PickUpdateManyMutationInput, Prisma.PickUncheckedUpdateManyWithoutUserInput>
+  data: Prisma.XOR<Prisma.PickUpdateManyMutationInput, Prisma.PickUncheckedUpdateManyWithoutLeagueMemberInput>
 }
 
 export type PickScalarWhereInput = {
@@ -602,7 +602,7 @@ export type PickScalarWhereInput = {
   id?: Prisma.StringFilter<"Pick"> | string
   draftId?: Prisma.StringFilter<"Pick"> | string
   pickNumber?: Prisma.IntFilter<"Pick"> | number
-  userId?: Prisma.StringFilter<"Pick"> | string
+  leagueMemberId?: Prisma.StringFilter<"Pick"> | string
   playerId?: Prisma.StringFilter<"Pick"> | string
   wasAutopick?: Prisma.BoolFilter<"Pick"> | boolean
   createdAt?: Prisma.DateTimeFilter<"Pick"> | Date | string
@@ -614,14 +614,14 @@ export type PickCreateWithoutPlayerInput = {
   wasAutopick?: boolean
   createdAt?: Date | string
   draft: Prisma.DraftCreateNestedOneWithoutPicksInput
-  user: Prisma.UserCreateNestedOneWithoutPicksInput
+  leagueMember: Prisma.LeagueMemberCreateNestedOneWithoutPicksInput
 }
 
 export type PickUncheckedCreateWithoutPlayerInput = {
   id?: string
   draftId: string
   pickNumber: number
-  userId: string
+  leagueMemberId: string
   wasAutopick?: boolean
   createdAt?: Date | string
 }
@@ -657,14 +657,14 @@ export type PickCreateWithoutDraftInput = {
   pickNumber: number
   wasAutopick?: boolean
   createdAt?: Date | string
-  user: Prisma.UserCreateNestedOneWithoutPicksInput
+  leagueMember: Prisma.LeagueMemberCreateNestedOneWithoutPicksInput
   player: Prisma.PlayerCreateNestedOneWithoutPicksInput
 }
 
 export type PickUncheckedCreateWithoutDraftInput = {
   id?: string
   pickNumber: number
-  userId: string
+  leagueMemberId: string
   playerId: string
   wasAutopick?: boolean
   createdAt?: Date | string
@@ -696,7 +696,7 @@ export type PickUpdateManyWithWhereWithoutDraftInput = {
   data: Prisma.XOR<Prisma.PickUpdateManyMutationInput, Prisma.PickUncheckedUpdateManyWithoutDraftInput>
 }
 
-export type PickCreateManyUserInput = {
+export type PickCreateManyLeagueMemberInput = {
   id?: string
   draftId: string
   pickNumber: number
@@ -705,7 +705,7 @@ export type PickCreateManyUserInput = {
   createdAt?: Date | string
 }
 
-export type PickUpdateWithoutUserInput = {
+export type PickUpdateWithoutLeagueMemberInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -714,7 +714,7 @@ export type PickUpdateWithoutUserInput = {
   player?: Prisma.PlayerUpdateOneRequiredWithoutPicksNestedInput
 }
 
-export type PickUncheckedUpdateWithoutUserInput = {
+export type PickUncheckedUpdateWithoutLeagueMemberInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   draftId?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
@@ -723,7 +723,7 @@ export type PickUncheckedUpdateWithoutUserInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
-export type PickUncheckedUpdateManyWithoutUserInput = {
+export type PickUncheckedUpdateManyWithoutLeagueMemberInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   draftId?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
@@ -736,7 +736,7 @@ export type PickCreateManyPlayerInput = {
   id?: string
   draftId: string
   pickNumber: number
-  userId: string
+  leagueMemberId: string
   wasAutopick?: boolean
   createdAt?: Date | string
 }
@@ -747,14 +747,14 @@ export type PickUpdateWithoutPlayerInput = {
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   draft?: Prisma.DraftUpdateOneRequiredWithoutPicksNestedInput
-  user?: Prisma.UserUpdateOneRequiredWithoutPicksNestedInput
+  leagueMember?: Prisma.LeagueMemberUpdateOneRequiredWithoutPicksNestedInput
 }
 
 export type PickUncheckedUpdateWithoutPlayerInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   draftId?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  leagueMemberId?: Prisma.StringFieldUpdateOperationsInput | string
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -763,7 +763,7 @@ export type PickUncheckedUpdateManyWithoutPlayerInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   draftId?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  leagueMemberId?: Prisma.StringFieldUpdateOperationsInput | string
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -771,7 +771,7 @@ export type PickUncheckedUpdateManyWithoutPlayerInput = {
 export type PickCreateManyDraftInput = {
   id?: string
   pickNumber: number
-  userId: string
+  leagueMemberId: string
   playerId: string
   wasAutopick?: boolean
   createdAt?: Date | string
@@ -782,14 +782,14 @@ export type PickUpdateWithoutDraftInput = {
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
-  user?: Prisma.UserUpdateOneRequiredWithoutPicksNestedInput
+  leagueMember?: Prisma.LeagueMemberUpdateOneRequiredWithoutPicksNestedInput
   player?: Prisma.PlayerUpdateOneRequiredWithoutPicksNestedInput
 }
 
 export type PickUncheckedUpdateWithoutDraftInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  leagueMemberId?: Prisma.StringFieldUpdateOperationsInput | string
   playerId?: Prisma.StringFieldUpdateOperationsInput | string
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -798,7 +798,7 @@ export type PickUncheckedUpdateWithoutDraftInput = {
 export type PickUncheckedUpdateManyWithoutDraftInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   pickNumber?: Prisma.IntFieldUpdateOperationsInput | number
-  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  leagueMemberId?: Prisma.StringFieldUpdateOperationsInput | string
   playerId?: Prisma.StringFieldUpdateOperationsInput | string
   wasAutopick?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -810,12 +810,12 @@ export type PickSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   id?: boolean
   draftId?: boolean
   pickNumber?: boolean
-  userId?: boolean
+  leagueMemberId?: boolean
   playerId?: boolean
   wasAutopick?: boolean
   createdAt?: boolean
   draft?: boolean | Prisma.DraftDefaultArgs<ExtArgs>
-  user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  leagueMember?: boolean | Prisma.LeagueMemberDefaultArgs<ExtArgs>
   player?: boolean | Prisma.PlayerDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["pick"]>
 
@@ -823,12 +823,12 @@ export type PickSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   draftId?: boolean
   pickNumber?: boolean
-  userId?: boolean
+  leagueMemberId?: boolean
   playerId?: boolean
   wasAutopick?: boolean
   createdAt?: boolean
   draft?: boolean | Prisma.DraftDefaultArgs<ExtArgs>
-  user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  leagueMember?: boolean | Prisma.LeagueMemberDefaultArgs<ExtArgs>
   player?: boolean | Prisma.PlayerDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["pick"]>
 
@@ -836,12 +836,12 @@ export type PickSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   id?: boolean
   draftId?: boolean
   pickNumber?: boolean
-  userId?: boolean
+  leagueMemberId?: boolean
   playerId?: boolean
   wasAutopick?: boolean
   createdAt?: boolean
   draft?: boolean | Prisma.DraftDefaultArgs<ExtArgs>
-  user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  leagueMember?: boolean | Prisma.LeagueMemberDefaultArgs<ExtArgs>
   player?: boolean | Prisma.PlayerDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["pick"]>
 
@@ -849,26 +849,26 @@ export type PickSelectScalar = {
   id?: boolean
   draftId?: boolean
   pickNumber?: boolean
-  userId?: boolean
+  leagueMemberId?: boolean
   playerId?: boolean
   wasAutopick?: boolean
   createdAt?: boolean
 }
 
-export type PickOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "draftId" | "pickNumber" | "userId" | "playerId" | "wasAutopick" | "createdAt", ExtArgs["result"]["pick"]>
+export type PickOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "draftId" | "pickNumber" | "leagueMemberId" | "playerId" | "wasAutopick" | "createdAt", ExtArgs["result"]["pick"]>
 export type PickInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   draft?: boolean | Prisma.DraftDefaultArgs<ExtArgs>
-  user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  leagueMember?: boolean | Prisma.LeagueMemberDefaultArgs<ExtArgs>
   player?: boolean | Prisma.PlayerDefaultArgs<ExtArgs>
 }
 export type PickIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   draft?: boolean | Prisma.DraftDefaultArgs<ExtArgs>
-  user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  leagueMember?: boolean | Prisma.LeagueMemberDefaultArgs<ExtArgs>
   player?: boolean | Prisma.PlayerDefaultArgs<ExtArgs>
 }
 export type PickIncludeUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   draft?: boolean | Prisma.DraftDefaultArgs<ExtArgs>
-  user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
+  leagueMember?: boolean | Prisma.LeagueMemberDefaultArgs<ExtArgs>
   player?: boolean | Prisma.PlayerDefaultArgs<ExtArgs>
 }
 
@@ -876,14 +876,14 @@ export type $PickPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   name: "Pick"
   objects: {
     draft: Prisma.$DraftPayload<ExtArgs>
-    user: Prisma.$UserPayload<ExtArgs>
+    leagueMember: Prisma.$LeagueMemberPayload<ExtArgs>
     player: Prisma.$PlayerPayload<ExtArgs>
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     draftId: string
     pickNumber: number
-    userId: string
+    leagueMemberId: string
     playerId: string
     wasAutopick: boolean
     createdAt: Date
@@ -1282,7 +1282,7 @@ readonly fields: PickFieldRefs;
 export interface Prisma__PickClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   draft<T extends Prisma.DraftDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.DraftDefaultArgs<ExtArgs>>): Prisma.Prisma__DraftClient<runtime.Types.Result.GetResult<Prisma.$DraftPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
-  user<T extends Prisma.UserDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.UserDefaultArgs<ExtArgs>>): Prisma.Prisma__UserClient<runtime.Types.Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  leagueMember<T extends Prisma.LeagueMemberDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LeagueMemberDefaultArgs<ExtArgs>>): Prisma.Prisma__LeagueMemberClient<runtime.Types.Result.GetResult<Prisma.$LeagueMemberPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   player<T extends Prisma.PlayerDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.PlayerDefaultArgs<ExtArgs>>): Prisma.Prisma__PlayerClient<runtime.Types.Result.GetResult<Prisma.$PlayerPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
@@ -1316,7 +1316,7 @@ export interface PickFieldRefs {
   readonly id: Prisma.FieldRef<"Pick", 'String'>
   readonly draftId: Prisma.FieldRef<"Pick", 'String'>
   readonly pickNumber: Prisma.FieldRef<"Pick", 'Int'>
-  readonly userId: Prisma.FieldRef<"Pick", 'String'>
+  readonly leagueMemberId: Prisma.FieldRef<"Pick", 'String'>
   readonly playerId: Prisma.FieldRef<"Pick", 'String'>
   readonly wasAutopick: Prisma.FieldRef<"Pick", 'Boolean'>
   readonly createdAt: Prisma.FieldRef<"Pick", 'DateTime'>

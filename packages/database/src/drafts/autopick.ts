@@ -97,7 +97,7 @@ export async function processExpiredDraftTurn(leagueId: string): Promise<Autopic
     if (!draft) {
       return { outcome: "skipped", leagueId, reason: "NO_DRAFT" };
     }
-    if (draft.status !== "ACTIVE" || draft.currentUserId === null) {
+    if (draft.status !== "ACTIVE" || draft.currentMemberId === null) {
       return { outcome: "skipped", leagueId, reason: "NOT_ACTIVE" };
     }
     if (!draft.turnDeadline || draft.turnDeadline.getTime() > Date.now()) {
@@ -123,10 +123,14 @@ export async function processExpiredDraftTurn(leagueId: string): Promise<Autopic
       );
     }
 
+    // Phase 5.1: attributed to the current LeagueMember, not a User — this
+    // is unchanged behavior for a HUMAN whose timer expired (the only case
+    // that exists until Phase 5.3's bot-turn orchestrator exists), just a
+    // mechanical rename from the old userId-keyed write.
     const result = await applyPick(tx, {
       draft,
       league,
-      userId: draft.currentUserId,
+      leagueMemberId: draft.currentMemberId,
       playerId,
       wasAutopick: true,
     });

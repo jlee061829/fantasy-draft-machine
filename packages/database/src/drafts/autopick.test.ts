@@ -42,18 +42,31 @@ async function addMember(leagueId: string, userId: string, draftSlot: number) {
 // equivalent test-support helper — packages/database must not depend on
 // apps/socket-server, and this is a small enough fixture that sharing it
 // isn't worth a cross-package dependency.
+//
+// Phase 5.1: returns membersBySlot (slot -> userId, needed to call
+// submitPick, which still authenticates humans by userId) alongside
+// membershipsBySlot (slot -> LeagueMember.id, what Draft.currentMemberId/
+// Pick.leagueMemberId actually store) and userIdByMembershipId (the
+// reverse lookup tests use to keep tracking "the current picker" across a
+// loop of many picks without recomputing getPickerForPickNumber).
 async function startFullDraft(overrides: LeagueOverrides = {}) {
   const teamCount = overrides.teamCount ?? 4;
   const owner = await createTestUser();
   const league = await createTestLeague(owner.id, overrides);
-  await addMember(league.id, owner.id, 1);
+  const ownerMembership = await addMember(league.id, owner.id, 1);
 
   const others = await Promise.all(Array.from({ length: teamCount - 1 }, () => createTestUser()));
-  await Promise.all(others.map((user, i) => addMember(league.id, user.id, i + 2)));
+  const otherMemberships = await Promise.all(
+    others.map((user, i) => addMember(league.id, user.id, i + 2)),
+  );
 
   const membersBySlot: Record<number, string> = { 1: owner.id };
+  const membershipsBySlot: Record<number, string> = { 1: ownerMembership.id };
+  const userIdByMembershipId: Record<string, string> = { [ownerMembership.id]: owner.id };
   others.forEach((user, i) => {
     membersBySlot[i + 2] = user.id;
+    membershipsBySlot[i + 2] = otherMemberships[i]!.id;
+    userIdByMembershipId[otherMemberships[i]!.id] = user.id;
   });
 
   const draft = await prisma.draft.create({
@@ -61,12 +74,12 @@ async function startFullDraft(overrides: LeagueOverrides = {}) {
       leagueId: league.id,
       status: "ACTIVE",
       currentPickNumber: 1,
-      currentUserId: owner.id,
+      currentMemberId: ownerMembership.id,
       turnDeadline: overrides.turnDeadline ?? new Date(Date.now() - 1_000),
     },
   });
 
-  return { league, owner, membersBySlot, draft };
+  return { league, owner, membersBySlot, membershipsBySlot, userIdByMembershipId, draft };
 }
 
 async function createPlayerWithAdp(
@@ -98,13 +111,13 @@ describe("processExpiredDraftTurn", () => {
       expect(outcome.outcome).toBe("picked");
       if (outcome.outcome !== "picked") throw new Error("unreachable");
       expect(outcome.result.pick.wasAutopick).toBe(true);
-      expect(outcome.result.pick.userId).toBe(draft.currentUserId);
+      expect(outcome.result.pick.leagueMemberId).toBe(draft.currentMemberId);
       const pickCount = await prisma.pick.count({ where: { draftId: draft.id } });
       expect(pickCount).toBe(1);
     });
 
-    it("advances currentUserId to the correct next picker", async () => {
-      const { league, membersBySlot } = await startFullDraft({
+    it("advances currentMemberId to the correct next picker", async () => {
+      const { league, membershipsBySlot } = await startFullDraft({
         teamCount: 4,
         draftType: "SNAKE",
       });
@@ -115,7 +128,7 @@ describe("processExpiredDraftTurn", () => {
       expect(outcome.outcome).toBe("picked");
       if (outcome.outcome !== "picked") throw new Error("unreachable");
       const expectedSlot = getPickerForPickNumber(2, 4, "SNAKE");
-      expect(outcome.result.draft.currentUserId).toBe(membersBySlot[expectedSlot]);
+      expect(outcome.result.draft.currentMemberId).toBe(membershipsBySlot[expectedSlot]);
     });
 
     it("advances turnDeadline from server time by League.timerSeconds", async () => {
@@ -133,14 +146,17 @@ describe("processExpiredDraftTurn", () => {
     });
 
     it("completes the draft on the final autopick with the correct terminal state", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4, rosterSize: 1 });
+      const { league, owner, userIdByMembershipId, draft } = await startFullDraft({
+        teamCount: 4,
+        rosterSize: 1,
+      });
       // rosterSize 1 * teamCount 4 = 4 total picks. Drive the first 3 via
       // manual submitPick, then let the final turn expire into autopick.
-      let currentUserId = draft.currentUserId!;
+      let currentUserId = owner.id; // pick 1 always belongs to slot 1 (owner)
       for (let i = 0; i < 3; i++) {
         const player = await createPlayerWithAdp(league.scoringFormat, i + 1);
         const result = await submitPick(league.id, currentUserId, player.id);
-        currentUserId = result.draft.currentUserId!;
+        currentUserId = userIdByMembershipId[result.draft.currentMemberId!]!;
       }
       await prisma.draft.update({
         where: { id: draft.id },
@@ -153,7 +169,7 @@ describe("processExpiredDraftTurn", () => {
       expect(outcome.outcome).toBe("picked");
       if (outcome.outcome !== "picked") throw new Error("unreachable");
       expect(outcome.result.draft.status).toBe("COMPLETE");
-      expect(outcome.result.draft.currentUserId).toBeNull();
+      expect(outcome.result.draft.currentMemberId).toBeNull();
       expect(outcome.result.draft.turnDeadline).toBeNull();
       expect(outcome.result.pick.wasAutopick).toBe(true);
 
@@ -166,9 +182,9 @@ describe("processExpiredDraftTurn", () => {
 
   describe("stale/no-op outcomes", () => {
     it("skips (does not double-pick) a turn already consumed by a manual pick", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4 });
+      const { league, owner, draft } = await startFullDraft({ teamCount: 4 });
       const player = await createTestPlayer();
-      await submitPick(league.id, draft.currentUserId!, player.id);
+      await submitPick(league.id, owner.id, player.id);
 
       const outcome = await processExpiredDraftTurn(league.id);
 
@@ -208,12 +224,17 @@ describe("processExpiredDraftTurn", () => {
     });
 
     it("skips an already-COMPLETE draft", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4, rosterSize: 1 });
-      let currentUserId = draft.currentUserId!;
+      const { league, owner, userIdByMembershipId, draft } = await startFullDraft({
+        teamCount: 4,
+        rosterSize: 1,
+      });
+      let currentUserId = owner.id;
       for (let i = 0; i < 4; i++) {
         const player = await createTestPlayer();
         const result = await submitPick(league.id, currentUserId, player.id);
-        currentUserId = result.draft.currentUserId ?? currentUserId;
+        if (result.draft.currentMemberId) {
+          currentUserId = userIdByMembershipId[result.draft.currentMemberId]!;
+        }
       }
       const completed = await prisma.draft.findUnique({ where: { id: draft.id } });
       expect(completed?.status).toBe("COMPLETE");
@@ -226,12 +247,12 @@ describe("processExpiredDraftTurn", () => {
 
   describe("concurrency", () => {
     it("a manual pick racing an expired-turn autopick results in exactly one accepted pick", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4 });
+      const { league, owner, draft } = await startFullDraft({ teamCount: 4 });
       const manualPlayer = await createTestPlayer();
       await createPlayerWithAdp(league.scoringFormat, 1);
 
       const [manualOutcome, autoOutcome] = await Promise.allSettled([
-        submitPick(league.id, draft.currentUserId!, manualPlayer.id),
+        submitPick(league.id, owner.id, manualPlayer.id),
         processExpiredDraftTurn(league.id),
       ]);
 
@@ -286,14 +307,14 @@ describe("processExpiredDraftTurn", () => {
     });
 
     it("never selects a player already drafted in this draft", async () => {
-      const { league, draft } = await startFullDraft({ teamCount: 4 });
+      const { league, owner, draft } = await startFullDraft({ teamCount: 4 });
       const alreadyDrafted = await createPlayerWithAdp(league.scoringFormat, 1, {
         fullName: "Taken",
       });
       const nextBest = await createPlayerWithAdp(league.scoringFormat, 2, {
         fullName: "Next best",
       });
-      await submitPick(league.id, draft.currentUserId!, alreadyDrafted.id);
+      await submitPick(league.id, owner.id, alreadyDrafted.id);
       await prisma.draft.update({
         where: { id: draft.id },
         data: { turnDeadline: new Date(Date.now() - 1_000) },

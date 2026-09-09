@@ -102,7 +102,7 @@ describe("POST /api/leagues/[leagueId]/draft", () => {
 
   it("lets the owner start a full league and returns 201 with the DTO", async () => {
     const owner = await createTestUser();
-    const { league } = await createTestLeague(owner.id, 4);
+    const { league, membership: ownerMembership } = await createTestLeague(owner.id, 4);
     await fillRemainingSlots(league.id, 4);
     authMock.mockResolvedValue({ user: { id: owner.id } });
 
@@ -111,7 +111,7 @@ describe("POST /api/leagues/[leagueId]/draft", () => {
 
     expect(response.status).toBe(201);
     expect(body.draft.status).toBe("ACTIVE");
-    expect(body.draft.currentUserId).toBe(owner.id);
+    expect(body.draft.currentMemberId).toBe(ownerMembership.id);
     expect(body.draft.currentPickNumber).toBe(1);
 
     const persisted = await prisma.draft.findUnique({ where: { leagueId: league.id } });

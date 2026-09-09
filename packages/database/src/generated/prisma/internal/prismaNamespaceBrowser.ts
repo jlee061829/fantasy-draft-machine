@@ -152,7 +152,9 @@ export const LeagueMemberScalarFieldEnum = {
   id: 'id',
   leagueId: 'leagueId',
   userId: 'userId',
-  draftSlot: 'draftSlot'
+  draftSlot: 'draftSlot',
+  participantType: 'participantType',
+  displayName: 'displayName'
 } as const
 
 export type LeagueMemberScalarFieldEnum = (typeof LeagueMemberScalarFieldEnum)[keyof typeof LeagueMemberScalarFieldEnum]
@@ -187,7 +189,7 @@ export const DraftScalarFieldEnum = {
   leagueId: 'leagueId',
   status: 'status',
   currentPickNumber: 'currentPickNumber',
-  currentUserId: 'currentUserId',
+  currentMemberId: 'currentMemberId',
   turnDeadline: 'turnDeadline',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -200,7 +202,7 @@ export const PickScalarFieldEnum = {
   id: 'id',
   draftId: 'draftId',
   pickNumber: 'pickNumber',
-  userId: 'userId',
+  leagueMemberId: 'leagueMemberId',
   playerId: 'playerId',
   wasAutopick: 'wasAutopick',
   createdAt: 'createdAt'

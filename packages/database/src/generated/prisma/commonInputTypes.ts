@@ -223,6 +223,23 @@ export type EnumDraftTypeWithAggregatesFilter<$PrismaModel = never> = {
   _max?: Prisma.NestedEnumDraftTypeFilter<$PrismaModel>
 }
 
+export type EnumLeagueMemberTypeFilter<$PrismaModel = never> = {
+  equals?: $Enums.LeagueMemberType | Prisma.EnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel> | $Enums.LeagueMemberType
+}
+
+export type EnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.LeagueMemberType | Prisma.EnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel> | $Enums.LeagueMemberType
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
+}
+
 export type FloatNullableFilter<$PrismaModel = never> = {
   equals?: number | Prisma.FloatFieldRefInput<$PrismaModel> | null
   in?: number[] | Prisma.ListFloatFieldRefInput<$PrismaModel> | null
@@ -500,6 +517,23 @@ export type NestedEnumDraftTypeWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumDraftTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumDraftTypeFilter<$PrismaModel>
+}
+
+export type NestedEnumLeagueMemberTypeFilter<$PrismaModel = never> = {
+  equals?: $Enums.LeagueMemberType | Prisma.EnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel> | $Enums.LeagueMemberType
+}
+
+export type NestedEnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.LeagueMemberType | Prisma.EnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  notIn?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedEnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel> | $Enums.LeagueMemberType
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
 }
 
 export type NestedFloatNullableWithAggregatesFilter<$PrismaModel = never> = {

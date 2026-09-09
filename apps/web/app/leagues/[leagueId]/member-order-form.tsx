@@ -5,7 +5,11 @@ import { useState } from "react";
 
 interface Member {
   membershipId: string;
-  userId: string;
+  // Phase 5.1: LeagueDetailResult.members[].userId is now string | null
+  // (null for a BOT LeagueMember) — widened here to match, even though
+  // this component never reads userId itself (only membershipId/name/
+  // draftSlot).
+  userId: string | null;
   name: string;
   image: string | null;
   draftSlot: number;

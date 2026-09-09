@@ -54,20 +54,29 @@ export async function expireDraftNow(draftId: string) {
 // generated members filling the rest). Deliberately not reusing apps/web's
 // startDraft service — apps/socket-server must not import apps/web
 // implementation code. Pick 1 always belongs to slot 1 under both SNAKE and
-// LINEAR, so currentUserId can be set directly without needing
+// LINEAR, so currentMemberId can be set directly without needing
 // getPickerForPickNumber here.
+//
+// Phase 5.1: returns both membersBySlot (slot -> userId, still needed to
+// mint SocketTickets — sockets only ever authenticate as a human) and
+// membershipsBySlot (slot -> LeagueMember.id, what Draft.currentMemberId
+// and Pick.leagueMemberId actually store).
 export async function startFullDraft(overrides: LeagueOverrides = {}) {
   const teamCount = overrides.teamCount ?? 4;
   const owner = await createTestUser();
   const league = await createTestLeague(owner.id, overrides);
-  await addMember(league.id, owner.id, 1);
+  const ownerMembership = await addMember(league.id, owner.id, 1);
 
   const others = await Promise.all(Array.from({ length: teamCount - 1 }, () => createTestUser()));
-  await Promise.all(others.map((user, i) => addMember(league.id, user.id, i + 2)));
+  const otherMemberships = await Promise.all(
+    others.map((user, i) => addMember(league.id, user.id, i + 2)),
+  );
 
   const membersBySlot: Record<number, string> = { 1: owner.id };
+  const membershipsBySlot: Record<number, string> = { 1: ownerMembership.id };
   others.forEach((user, i) => {
     membersBySlot[i + 2] = user.id;
+    membershipsBySlot[i + 2] = otherMemberships[i]!.id;
   });
 
   const draft = await prisma.draft.create({
@@ -75,12 +84,12 @@ export async function startFullDraft(overrides: LeagueOverrides = {}) {
       leagueId: league.id,
       status: "ACTIVE",
       currentPickNumber: 1,
-      currentUserId: membersBySlot[1],
+      currentMemberId: membershipsBySlot[1],
       turnDeadline: new Date(Date.now() + (overrides.timerSeconds ?? 60) * 1000),
     },
   });
 
-  return { league, owner, membersBySlot, draft };
+  return { league, owner, membersBySlot, membershipsBySlot, draft };
 }
 
 export async function startTestServer(): Promise<{

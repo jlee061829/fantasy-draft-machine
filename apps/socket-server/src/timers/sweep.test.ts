@@ -129,10 +129,10 @@ describe("runSweepOnce", () => {
   });
 
   it("does not broadcast for a stale/no-op sweep pass", async () => {
-    const { league, draft } = await startFullDraft({ teamCount: 4 });
+    const { league, owner } = await startFullDraft({ teamCount: 4 });
     // Deliberately NOT expired — this is the no-op path.
 
-    const ticket = await createSocketTicket(draft.currentUserId!);
+    const ticket = await createSocketTicket(owner.id);
     const socket = await connectClient(baseUrl, ticket.token);
     await joinDraft(socket, { leagueId: league.id });
 

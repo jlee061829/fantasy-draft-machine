@@ -29,6 +29,11 @@ export type {
 // Single field-selection shared by both query variants below, so the
 // membership-checked (getDraftState) and unchecked (getDraftStateForLeague)
 // paths can't drift out of sync with each other over time.
+//
+// Phase 5.1: `user` is now an optional relation (a BOT LeagueMember has
+// none), and `participantType`/`displayName` are selected alongside it so
+// toDraftStateResult below can resolve a single normalized display name/
+// image per member regardless of HUMAN/BOT shape.
 const draftStateSelect = {
   id: true,
   name: true,
@@ -41,6 +46,8 @@ const draftStateSelect = {
     select: {
       id: true,
       userId: true,
+      participantType: true,
+      displayName: true,
       draftSlot: true,
       user: { select: { id: true, name: true, image: true } },
     },
@@ -51,13 +58,13 @@ const draftStateSelect = {
       id: true,
       status: true,
       currentPickNumber: true,
-      currentUserId: true,
+      currentMemberId: true,
       turnDeadline: true,
       picks: {
         orderBy: { pickNumber: "asc" },
         select: {
           pickNumber: true,
-          userId: true,
+          leagueMemberId: true,
           playerId: true,
           wasAutopick: true,
           createdAt: true,
@@ -69,6 +76,23 @@ const draftStateSelect = {
 } satisfies Prisma.LeagueSelect;
 
 type RawDraftState = Prisma.LeagueGetPayload<{ select: typeof draftStateSelect }>;
+type RawMember = RawDraftState["members"][number];
+
+// The one place HUMAN vs. BOT display shape is resolved into a single
+// normalized `name`/`image` pair — every DTO consumer (draft-room helpers,
+// team-roster helpers, the board, league detail) reads the same two fields
+// regardless of participant kind, rather than each having to branch on
+// `participantType` itself. The CHECK constraint added in this feature's
+// migration guarantees `user` is non-null for HUMAN and `displayName` is
+// non-null for BOT, so the `!` assertions below reflect a DB-enforced
+// invariant, not an assumption.
+function resolveMemberName(member: RawMember): string {
+  return member.participantType === "BOT" ? member.displayName! : member.user!.name;
+}
+
+function resolveMemberImage(member: RawMember): string | null {
+  return member.participantType === "BOT" ? null : (member.user?.image ?? null);
+}
 
 function toDraftStateResult(league: RawDraftState): DraftStateResult {
   return {
@@ -83,9 +107,10 @@ function toDraftStateResult(league: RawDraftState): DraftStateResult {
     },
     members: league.members.map((member) => ({
       membershipId: member.id,
+      participantType: member.participantType,
       userId: member.userId,
-      name: member.user.name,
-      image: member.user.image,
+      name: resolveMemberName(member),
+      image: resolveMemberImage(member),
       draftSlot: member.draftSlot,
     })),
     draft: league.draft
@@ -93,13 +118,13 @@ function toDraftStateResult(league: RawDraftState): DraftStateResult {
           id: league.draft.id,
           status: league.draft.status,
           currentPickNumber: league.draft.currentPickNumber,
-          currentUserId: league.draft.currentUserId,
+          currentMemberId: league.draft.currentMemberId,
           turnDeadline: league.draft.turnDeadline?.toISOString() ?? null,
         }
       : null,
     picks: (league.draft?.picks ?? []).map((pick) => ({
       pickNumber: pick.pickNumber,
-      userId: pick.userId,
+      leagueMemberId: pick.leagueMemberId,
       playerId: pick.playerId,
       playerName: pick.player.fullName,
       playerPosition: pick.player.position,

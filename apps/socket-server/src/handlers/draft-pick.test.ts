@@ -37,16 +37,19 @@ describe("draft:pick", () => {
   });
 
   it("lets the current picker submit a valid player, persists the pick, and broadcasts updated state to the room", async () => {
-    const { league, draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const { league, draft, membersBySlot, owner } = await startFullDraft({ teamCount: 4 });
     const player = await createTestPlayer();
 
-    const pickerTicket = await createSocketTicket(draft.currentUserId!);
+    // Pick 1 always belongs to slot 1 (the owner) under startFullDraft's own
+    // invariant. Sockets always authenticate as a human (userId), never a
+    // membership id.
+    const pickerTicket = await createSocketTicket(owner.id);
     const pickerSocket = await connectClient(baseUrl, pickerTicket.token);
     await joinDraft(pickerSocket, { leagueId: league.id });
 
     // A second, uninvolved member in the same room to prove the broadcast
     // reaches every socket, not just the submitter.
-    const observerTicket = await createSocketTicket(membersBySlot[2]);
+    const observerTicket = await createSocketTicket(membersBySlot[2]!);
     const observerSocket = await connectClient(baseUrl, observerTicket.token);
     await joinDraft(observerSocket, { leagueId: league.id });
 
@@ -63,7 +66,7 @@ describe("draft:pick", () => {
     const persistedPick = await prisma.pick.findUnique({
       where: { draftId_playerId: { draftId: draft.id, playerId: player.id } },
     });
-    expect(persistedPick?.userId).toBe(draft.currentUserId);
+    expect(persistedPick?.leagueMemberId).toBe(draft.currentMemberId);
 
     const broadcastState = await broadcastPromise;
     expect(broadcastState.draft?.currentPickNumber).toBe(2);
@@ -76,7 +79,7 @@ describe("draft:pick", () => {
   it("rejects a non-current picker and leaves state unchanged", async () => {
     const { league, draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
     const player = await createTestPlayer();
-    const notOnClock = membersBySlot[2];
+    const notOnClock = membersBySlot[2]!;
 
     const ticket = await createSocketTicket(notOnClock);
     const socket = await connectClient(baseUrl, ticket.token);
@@ -92,8 +95,8 @@ describe("draft:pick", () => {
   });
 
   it("rejects an unknown player", async () => {
-    const { league, draft } = await startFullDraft({ teamCount: 4 });
-    const ticket = await createSocketTicket(draft.currentUserId!);
+    const { league, owner } = await startFullDraft({ teamCount: 4 });
+    const ticket = await createSocketTicket(owner.id);
     const socket = await connectClient(baseUrl, ticket.token);
     await joinDraft(socket, { leagueId: league.id });
 
@@ -108,16 +111,16 @@ describe("draft:pick", () => {
   });
 
   it("rejects an already-drafted player", async () => {
-    const { league, draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const { league, membersBySlot, owner } = await startFullDraft({ teamCount: 4 });
     const player = await createTestPlayer();
 
-    const firstTicket = await createSocketTicket(draft.currentUserId!);
+    const firstTicket = await createSocketTicket(owner.id);
     const firstSocket = await connectClient(baseUrl, firstTicket.token);
     await joinDraft(firstSocket, { leagueId: league.id });
     const firstAck = await submitDraftPick(firstSocket, { leagueId: league.id, playerId: player.id });
     expect(firstAck).toEqual({ ok: true });
 
-    const secondPicker = membersBySlot[2];
+    const secondPicker = membersBySlot[2]!;
     const secondTicket = await createSocketTicket(secondPicker);
     const secondSocket = await connectClient(baseUrl, secondTicket.token);
     await joinDraft(secondSocket, { leagueId: league.id });
@@ -150,22 +153,34 @@ describe("draft:pick", () => {
     const { league, draft } = await startFullDraft({ teamCount: 4, rosterSize: 1 });
     // rosterSize 1 * teamCount 4 = 4 total picks; drive it to completion.
     const players = await Promise.all(Array.from({ length: 4 }, () => createTestPlayer()));
-    let currentUserId = draft.currentUserId!;
+    // Tracks the current LeagueMember.id (what Draft.currentMemberId
+    // actually stores); resolved to a userId only when a ticket needs
+    // minting, since sockets always authenticate as a human.
+    let currentMemberId = draft.currentMemberId!;
     for (const player of players) {
-      const ticket = await createSocketTicket(currentUserId);
+      const currentMember = await prisma.leagueMember.findUniqueOrThrow({
+        where: { id: currentMemberId },
+      });
+      const ticket = await createSocketTicket(currentMember.userId!);
       const socket = await connectClient(baseUrl, ticket.token);
       await joinDraft(socket, { leagueId: league.id });
       const ack = await submitDraftPick(socket, { leagueId: league.id, playerId: player.id });
       expect(ack.ok).toBe(true);
       const persisted = await prisma.draft.findUnique({ where: { id: draft.id } });
-      currentUserId = persisted?.currentUserId ?? currentUserId;
+      // On the final pick, persisted.currentMemberId is cleared to null —
+      // `?? currentMemberId` keeps the last real picker, mirroring the
+      // pre-5.1 currentUserId fallback this replaces.
+      currentMemberId = persisted?.currentMemberId ?? currentMemberId;
       socket.disconnect();
     }
 
     const completed = await prisma.draft.findUnique({ where: { id: draft.id } });
     expect(completed?.status).toBe("COMPLETE");
 
-    const extraTicket = await createSocketTicket(currentUserId);
+    const lastMember = await prisma.leagueMember.findUniqueOrThrow({
+      where: { id: currentMemberId },
+    });
+    const extraTicket = await createSocketTicket(lastMember.userId!);
     const extraSocket = await connectClient(baseUrl, extraTicket.token);
     await joinDraft(extraSocket, { leagueId: league.id });
     const extraPlayer = await createTestPlayer();
@@ -178,8 +193,8 @@ describe("draft:pick", () => {
   });
 
   it("rejects a malformed payload", async () => {
-    const { league, draft } = await startFullDraft({ teamCount: 4 });
-    const ticket = await createSocketTicket(draft.currentUserId!);
+    const { league, owner } = await startFullDraft({ teamCount: 4 });
+    const ticket = await createSocketTicket(owner.id);
     const socket = await connectClient(baseUrl, ticket.token);
     await joinDraft(socket, { leagueId: league.id });
 
@@ -192,9 +207,9 @@ describe("draft:pick", () => {
   });
 
   it("rejects a socket that never called draft:join", async () => {
-    const { league, draft } = await startFullDraft({ teamCount: 4 });
+    const { league, owner } = await startFullDraft({ teamCount: 4 });
     const player = await createTestPlayer();
-    const ticket = await createSocketTicket(draft.currentUserId!);
+    const ticket = await createSocketTicket(owner.id);
     const socket = await connectClient(baseUrl, ticket.token);
     // Deliberately no joinDraft(...) call here.
 
@@ -206,12 +221,14 @@ describe("draft:pick", () => {
   });
 
   it("rejects a payload with an extra client-supplied userId and derives identity only from the authenticated ticket", async () => {
-    const { league, draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const { league, draft, membersBySlot, membershipsBySlot, owner } = await startFullDraft({
+      teamCount: 4,
+    });
     const player = await createTestPlayer();
-    const notOnClock = membersBySlot[2];
+    const notOnClock = membersBySlot[2]!;
     // Authenticate as the picker who IS on the clock, but attempt to smuggle
     // a different userId in the payload to see if it's honored.
-    const ticket = await createSocketTicket(draft.currentUserId!);
+    const ticket = await createSocketTicket(owner.id);
     const socket = await connectClient(baseUrl, ticket.token);
     await joinDraft(socket, { leagueId: league.id });
 
@@ -224,25 +241,25 @@ describe("draft:pick", () => {
     expect(smuggledAck).toEqual({ ok: false, error: "INVALID_PAYLOAD" });
 
     // The same socket, without the extra field, succeeds and the persisted
-    // Pick is attributed to the authenticated ticket's user (the real
-    // current picker), never to any client-supplied value.
+    // Pick is attributed to the authenticated ticket's own membership (the
+    // real current picker), never to any client-supplied value.
     const realAck = await submitDraftPick(socket, { leagueId: league.id, playerId: player.id });
     expect(realAck).toEqual({ ok: true });
     const persisted = await prisma.pick.findUnique({
       where: { draftId_playerId: { draftId: draft.id, playerId: player.id } },
     });
-    expect(persisted?.userId).toBe(draft.currentUserId);
-    expect(persisted?.userId).not.toBe(notOnClock);
+    expect(persisted?.leagueMemberId).toBe(draft.currentMemberId);
+    expect(persisted?.leagueMemberId).not.toBe(membershipsBySlot[2]);
 
     socket.disconnect();
   });
 
   it("does not broadcast on a rejected pick", async () => {
-    const { league, draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const { league, membersBySlot, owner } = await startFullDraft({ teamCount: 4 });
     const player = await createTestPlayer();
-    const notOnClock = membersBySlot[2];
+    const notOnClock = membersBySlot[2]!;
 
-    const observerTicket = await createSocketTicket(draft.currentUserId!);
+    const observerTicket = await createSocketTicket(owner.id);
     const observerSocket = await connectClient(baseUrl, observerTicket.token);
     await joinDraft(observerSocket, { leagueId: league.id });
 

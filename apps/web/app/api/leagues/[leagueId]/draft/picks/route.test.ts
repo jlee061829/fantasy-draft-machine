@@ -80,8 +80,8 @@ describe("POST /api/leagues/[leagueId]/draft/picks", () => {
   });
 
   it("rejects a malformed body (missing playerId) with 400", async () => {
-    const { league, draft } = await startFullLeague();
-    authMock.mockResolvedValue({ user: { id: draft.currentUserId } });
+    const { league, owner } = await startFullLeague();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
 
     const response = await POST(pickRequest({}), ctxFor(league.id));
 
@@ -89,8 +89,8 @@ describe("POST /api/leagues/[leagueId]/draft/picks", () => {
   });
 
   it("rejects a body with unknown fields (strict schema) with 400", async () => {
-    const { league, draft } = await startFullLeague();
-    authMock.mockResolvedValue({ user: { id: draft.currentUserId } });
+    const { league, owner } = await startFullLeague();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
     const player = await createTestPlayer();
 
     const response = await POST(
@@ -145,8 +145,8 @@ describe("POST /api/leagues/[leagueId]/draft/picks", () => {
   });
 
   it("returns 404 for an unknown playerId", async () => {
-    const { league, draft } = await startFullLeague();
-    authMock.mockResolvedValue({ user: { id: draft.currentUserId } });
+    const { league, owner } = await startFullLeague();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
 
     const response = await POST(
       pickRequest({ playerId: "nonexistent-player" }),
@@ -157,24 +157,24 @@ describe("POST /api/leagues/[leagueId]/draft/picks", () => {
   });
 
   it("returns 409 for an already-drafted player", async () => {
-    const { league, draft } = await startFullLeague();
-    authMock.mockResolvedValue({ user: { id: draft.currentUserId } });
+    const { league, owner, others } = await startFullLeague();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
     const player = await createTestPlayer();
 
     const first = await POST(pickRequest({ playerId: player.id }), ctxFor(league.id));
     expect(first.status).toBe(201);
-    const firstBody = await first.json();
-    const secondPicker = firstBody.draft.currentUserId;
 
-    authMock.mockResolvedValue({ user: { id: secondPicker } });
+    // Pick 2 always belongs to slot 2 under SNAKE (or LINEAR) with pick 1
+    // at slot 1 — others[0] is the user fillRemainingSlots placed at slot 2.
+    authMock.mockResolvedValue({ user: { id: others[0]!.id } });
     const response = await POST(pickRequest({ playerId: player.id }), ctxFor(league.id));
 
     expect(response.status).toBe(409);
   });
 
   it("lets the current picker submit a pick and returns 201 with the DTO", async () => {
-    const { league, draft } = await startFullLeague();
-    authMock.mockResolvedValue({ user: { id: draft.currentUserId } });
+    const { league, draft, owner } = await startFullLeague();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
     const player = await createTestPlayer();
 
     const response = await POST(pickRequest({ playerId: player.id }), ctxFor(league.id));

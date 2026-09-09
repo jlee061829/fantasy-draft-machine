@@ -8,7 +8,11 @@ import type { ReorderLeagueMembersInput } from "./schema";
 export interface ReorderLeagueMembersResult {
   members: Array<{
     membershipId: string;
-    userId: string;
+    // Phase 5.1: null for a BOT LeagueMember. name/image are already
+    // normalized (HUMAN -> user.name/user.image, BOT -> displayName/null),
+    // the same convention used by getLeagueDetail/getDraftState.
+    participantType: "HUMAN" | "BOT";
+    userId: string | null;
     name: string;
     image: string | null;
     draftSlot: number;
@@ -95,6 +99,8 @@ export async function reorderLeagueMembers(
         select: {
           id: true,
           userId: true,
+          participantType: true,
+          displayName: true,
           draftSlot: true,
           user: { select: { name: true, image: true } },
         },
@@ -105,9 +111,10 @@ export async function reorderLeagueMembers(
     return {
       members: members.map((member) => ({
         membershipId: member.id,
+        participantType: member.participantType,
         userId: member.userId,
-        name: member.user.name,
-        image: member.user.image,
+        name: member.participantType === "BOT" ? member.displayName! : member.user!.name,
+        image: member.participantType === "BOT" ? null : (member.user?.image ?? null),
         draftSlot: member.draftSlot,
       })),
     };

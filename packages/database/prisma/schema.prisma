@@ -25,6 +25,14 @@ enum DraftStatus {
   COMPLETE
 }
 
+// Phase 5.1: distinguishes a real authenticated participant from a
+// server-owned bot participant. See LeagueMember below for the full
+// HUMAN/BOT shape invariant.
+enum LeagueMemberType {
+  HUMAN
+  BOT
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -36,9 +44,7 @@ model User {
   sessions          Session[]
   ownedLeagues      League[]
   leagueMemberships LeagueMember[]
-  picks             Pick[]
   chatMessages      ChatMessage[]
-  currentTurnDrafts Draft[]
   socketTickets     SocketTicket[]
 
   createdAt DateTime @default(now())
@@ -100,14 +106,45 @@ model League {
   updatedAt DateTime @updatedAt
 }
 
+// Phase 5.1: the unified draft-participant model for both humans and
+// server-owned bots. draftSlot already meant "who occupies this draft
+// position" before bots existed, so a bot is represented as another
+// LeagueMember row rather than introducing a second slot-ownership table.
+//
+// Exactly one of two shapes is valid, enforced by a CHECK constraint added
+// by hand in this feature's migration SQL (Prisma 7.9.1 has no `@@check`
+// schema DSL, confirmed via `prisma validate` against a scratch schema
+// before writing this) — so this invariant is NOT visible here and must be
+// preserved manually if this model is touched by a future `prisma migrate
+// dev` that doesn't know about it:
+//
+//   HUMAN: userId IS NOT NULL, displayName IS NULL
+//   BOT:   userId IS NULL,     displayName IS NOT NULL
+//
+// A bot's durable identity is its own LeagueMember.id — there is no fake
+// User/Account/Session/SocketTicket row for a bot ever, by design.
+//
+// @@unique([leagueId, userId]) still rejects a human joining twice. For BOT
+// rows (userId = null), PostgreSQL's standard (not version-gated) behavior
+// treats every NULL as distinct in a unique index, so multiple bots per
+// league coexist under this same constraint with no NULLS NOT DISTINCT
+// opt-in or partial index — verified with a real-Postgres integration test
+// rather than assumed.
 model LeagueMember {
-  id        String @id @default(cuid())
-  leagueId  String
-  userId    String
-  draftSlot Int
+  id              String           @id @default(cuid())
+  leagueId        String
+  userId          String?
+  draftSlot       Int
+  participantType LeagueMemberType @default(HUMAN)
+  displayName     String?
 
   league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Back-relations for Draft.currentMember/Pick.leagueMember below — see
+  // those models' own comments for the onDelete reasoning on each side.
+  currentTurnDrafts Draft[]
+  picks             Pick[]
 
   @@unique([leagueId, userId])
   @@unique([leagueId, draftSlot])
@@ -143,11 +180,19 @@ model Draft {
   leagueId          String      @unique
   status            DraftStatus @default(PENDING)
   currentPickNumber Int         @default(1)
-  currentUserId     String?
+  // Phase 5.1: the participant currently on the clock, identified by
+  // LeagueMember.id rather than User.id — a bot has no User row to point
+  // to. Renamed from currentUserId; see submit-pick.ts/autopick.ts for the
+  // read/write sites and this feature's migration for the backfill.
+  currentMemberId   String?
   turnDeadline      DateTime?
 
-  league      League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
-  currentUser User?  @relation(fields: [currentUserId], references: [id])
+  league        League        @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  // SetNull, not Restrict: this is a live "who's on the clock right now"
+  // pointer, not historical attribution (that's Pick.leagueMember below).
+  // If the referenced LeagueMember row were ever removed, clearing this
+  // field is harmless/recoverable — unlike losing a Pick's authorship.
+  currentMember LeagueMember? @relation(fields: [currentMemberId], references: [id], onDelete: SetNull)
 
   picks        Pick[]
   chatMessages ChatMessage[]
@@ -157,17 +202,28 @@ model Draft {
 }
 
 model Pick {
-  id          String   @id @default(cuid())
-  draftId     String
-  pickNumber  Int
-  userId      String
-  playerId    String
-  wasAutopick Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id             String   @id @default(cuid())
+  draftId        String
+  pickNumber     Int
+  // Phase 5.1: renamed from userId. Historical pick attribution now points
+  // at the LeagueMember that made the pick (HUMAN or BOT) rather than at a
+  // User row a bot could never have. Required (not nullable) — every Pick
+  // has exactly one attributable participant.
+  leagueMemberId String
+  playerId       String
+  wasAutopick    Boolean  @default(false)
+  createdAt      DateTime @default(now())
 
-  draft  Draft  @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  user   User   @relation(fields: [userId], references: [id])
-  player Player @relation(fields: [playerId], references: [id])
+  draft        Draft        @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  // Restrict, deliberately not Cascade: this is the historical-attribution
+  // FK the whole migration exists to protect. A required relation defaults
+  // to Restrict in Prisma/Postgres already, but it's declared explicitly
+  // here since it's the load-bearing decision — deleting a LeagueMember
+  // (e.g. via the existing User -> LeagueMember onDelete: Cascade, if that
+  // user has ever picked) must fail loudly at the database level rather
+  // than silently erasing that user's/bot's Pick history.
+  leagueMember LeagueMember @relation(fields: [leagueMemberId], references: [id], onDelete: Restrict)
+  player       Player       @relation(fields: [playerId], references: [id])
 
   @@unique([draftId, playerId])
   @@unique([draftId, pickNumber])

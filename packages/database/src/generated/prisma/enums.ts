@@ -34,3 +34,11 @@ export const DraftStatus = {
 } as const
 
 export type DraftStatus = (typeof DraftStatus)[keyof typeof DraftStatus]
+
+
+export const LeagueMemberType = {
+  HUMAN: 'HUMAN',
+  BOT: 'BOT'
+} as const
+
+export type LeagueMemberType = (typeof LeagueMemberType)[keyof typeof LeagueMemberType]

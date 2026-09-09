@@ -25,11 +25,19 @@ interface TeamRosterPanelProps {
 // position text, autopicks get the same small AUTO badge the board uses,
 // and the list scrolls internally past a bounded height so a full-length
 // roster doesn't push the rest of the live room around.
+//
+// Phase 5.1: the selector is keyed by membershipId, not userId — a BOT
+// roster's userId is null, and userId is no longer unique across rosters
+// once more than one BOT can exist in a league (every bot would collide on
+// the same null/"" <option> value). membershipId is unique for every
+// participant, HUMAN or BOT, so it's the only safe selection key here.
 export function TeamRosterPanel({ state, currentUserId }: TeamRosterPanelProps) {
   const rosters = useMemo(() => deriveTeamRosters(state), [state]);
-  const [selectedUserId, setSelectedUserId] = useState(currentUserId);
+  const viewerMembershipId =
+    rosters.find((r) => r.userId === currentUserId)?.membershipId ?? (rosters[0]?.membershipId ?? "");
+  const [selectedMembershipId, setSelectedMembershipId] = useState(viewerMembershipId);
 
-  const selected = rosters.find((r) => r.userId === selectedUserId) ?? rosters[0] ?? null;
+  const selected = rosters.find((r) => r.membershipId === selectedMembershipId) ?? rosters[0] ?? null;
   const teamCount = state.league.teamCount;
 
   return (
@@ -41,7 +49,7 @@ export function TeamRosterPanel({ state, currentUserId }: TeamRosterPanelProps) 
       }}
     >
       <h2 style={{ marginTop: 0 }}>
-        {selectedUserId === currentUserId ? "My Team" : (selected?.name ?? "Team")}
+        {selectedMembershipId === viewerMembershipId ? "My Team" : (selected?.name ?? "Team")}
       </h2>
 
       <label
@@ -52,13 +60,13 @@ export function TeamRosterPanel({ state, currentUserId }: TeamRosterPanelProps) 
       </label>
       <select
         id="team-roster-select"
-        value={selectedUserId}
-        onChange={(event) => setSelectedUserId(event.target.value)}
+        value={selectedMembershipId}
+        onChange={(event) => setSelectedMembershipId(event.target.value)}
         style={{ marginBottom: 12 }}
       >
         {rosters.map((roster) => (
-          <option key={roster.userId} value={roster.userId}>
-            {roster.userId === currentUserId ? `${roster.name} (you)` : roster.name} — Slot{" "}
+          <option key={roster.membershipId} value={roster.membershipId}>
+            {roster.membershipId === viewerMembershipId ? `${roster.name} (you)` : roster.name} — Slot{" "}
             {roster.draftSlot}
           </option>
         ))}

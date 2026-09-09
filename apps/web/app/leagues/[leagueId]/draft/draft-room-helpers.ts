@@ -26,22 +26,40 @@ const UNKNOWN_PICKER_NAME = "Unknown manager";
 
 // Returns the display name of whoever is currently on the clock, or null
 // when there's no one to display (no Draft yet, or the Draft is COMPLETE
-// and currentUserId has been cleared). A currentUserId that doesn't match
-// any current member is an unexpected data shape, not a reason to crash the
-// draft room — it falls back to a visible placeholder instead.
+// and currentMemberId has been cleared). A currentMemberId that doesn't
+// match any current member is an unexpected data shape, not a reason to
+// crash the draft room — it falls back to a visible placeholder instead.
+//
+// Phase 5.1: matches on membershipId, not userId — the picker on the clock
+// is a LeagueMember (HUMAN or BOT), and `member.name` is already the
+// normalized display name for either shape (see @fdm/database's
+// getDraftState), so no HUMAN/BOT branching is needed here.
 export function getCurrentPickerName(state: DraftStateResult): string | null {
-  const currentUserId = state.draft?.currentUserId;
-  if (!currentUserId) return null;
+  const currentMemberId = state.draft?.currentMemberId;
+  if (!currentMemberId) return null;
 
-  const member = state.members.find((m) => m.userId === currentUserId);
+  const member = state.members.find((m) => m.membershipId === currentMemberId);
   return member ? member.name : UNKNOWN_PICKER_NAME;
 }
 
-// True only when the authenticated viewer is the exact user the server says
-// is on the clock. False whenever there's no Draft, the Draft is COMPLETE
-// (currentUserId is null), or someone else is picking.
-export function isYourTurn(state: DraftStateResult, currentUserId: string): boolean {
-  return state.draft?.currentUserId === currentUserId;
+// True only when the authenticated viewer is the exact participant the
+// server says is on the clock. False whenever there's no Draft, the Draft
+// is COMPLETE (currentMemberId is null), someone else is picking, or the
+// current picker is a BOT (a BOT's userId is always null, so it can never
+// equal any real viewer's id below).
+//
+// Phase 5.1: two distinct identities are involved on purpose — viewerUserId
+// is the authenticated browser user (a real User.id), while the picker is
+// tracked by membership identity (currentMemberId). This resolves the
+// viewer's own membership row first, then compares membership-to-membership
+// rather than comparing a User.id to a value that might be a bot's
+// membership id.
+export function isYourTurn(state: DraftStateResult, viewerUserId: string): boolean {
+  const currentMemberId = state.draft?.currentMemberId;
+  if (!currentMemberId) return false;
+
+  const viewerMembership = state.members.find((m) => m.userId === viewerUserId);
+  return viewerMembership?.membershipId === currentMemberId;
 }
 
 // msRemaining is always derived fresh from authoritative turnDeadline and a

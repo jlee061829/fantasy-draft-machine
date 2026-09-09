@@ -116,6 +116,7 @@ describe("getLeagueDetail", () => {
       "image",
       "membershipId",
       "name",
+      "participantType",
       "userId",
     ]);
   });

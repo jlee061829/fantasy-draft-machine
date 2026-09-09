@@ -33,9 +33,13 @@ describe("concurrency: shared submitPick service vs. the socket transport", () =
   });
 
   it("racing one direct submitPick(...) call against one real draft:pick emit for the same turn lets exactly one win", async () => {
-    const { league, draft } = await startFullDraft({ teamCount: 4 });
+    const { league, draft, owner } = await startFullDraft({ teamCount: 4 });
     const player = await createTestPlayer();
-    const currentUserId = draft.currentUserId!;
+    // Pick 1 always belongs to slot 1 (the owner) under this fixture's own
+    // invariant — see startFullDraft's comment. submitPick still
+    // authenticates humans by userId, so this stays a real User.id even
+    // though Draft.currentMemberId itself is now a LeagueMember.id.
+    const currentUserId = owner.id;
 
     const ticket = await createSocketTicket(currentUserId);
     const socket = await connectClient(baseUrl, ticket.token);
@@ -64,15 +68,15 @@ describe("concurrency: shared submitPick service vs. the socket transport", () =
     expect(pickCount).toBe(1);
     const persisted = await prisma.draft.findUnique({ where: { id: draft.id } });
     expect(persisted?.currentPickNumber).toBe(2);
-    expect(persisted?.currentUserId).not.toBeNull();
+    expect(persisted?.currentMemberId).not.toBeNull();
 
     socket.disconnect();
   });
 
   it("racing two authenticated sockets for the same turn lets exactly one win and broadcasts exactly one authoritative state", async () => {
-    const { league, draft } = await startFullDraft({ teamCount: 4 });
+    const { league, draft, owner } = await startFullDraft({ teamCount: 4 });
     const player = await createTestPlayer();
-    const currentUserId = draft.currentUserId!;
+    const currentUserId = owner.id;
 
     // Two sockets both authenticated as the current picker (multi-tab
     // scenario) racing the exact same turn/player.

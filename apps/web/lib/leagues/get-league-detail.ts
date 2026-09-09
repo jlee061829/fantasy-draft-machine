@@ -21,7 +21,12 @@ export interface LeagueDetailResult {
   };
   members: Array<{
     membershipId: string;
-    userId: string;
+    // Phase 5.1: null for a BOT LeagueMember. name/image are already
+    // normalized (HUMAN -> user.name/user.image, BOT -> displayName/null)
+    // the same way getDraftState's DTO normalizes them, so callers of this
+    // DTO don't need to branch on participantType for display purposes.
+    participantType: "HUMAN" | "BOT";
+    userId: string | null;
     name: string;
     image: string | null;
     draftSlot: number;
@@ -63,6 +68,8 @@ export async function getLeagueDetail(
         select: {
           id: true,
           userId: true,
+          participantType: true,
+          displayName: true,
           draftSlot: true,
           user: { select: { id: true, name: true, image: true } },
         },
@@ -96,9 +103,12 @@ export async function getLeagueDetail(
     },
     members: league.members.map((member) => ({
       membershipId: member.id,
+      participantType: member.participantType,
       userId: member.userId,
-      name: member.user.name,
-      image: member.user.image,
+      // BOT -> displayName (guaranteed non-null by the participant-shape
+      // CHECK constraint), HUMAN -> user.name.
+      name: member.participantType === "BOT" ? member.displayName! : member.user!.name,
+      image: member.participantType === "BOT" ? null : (member.user?.image ?? null),
       draftSlot: member.draftSlot,
     })),
     draft: league.draft ? { id: league.draft.id, status: league.draft.status } : null,

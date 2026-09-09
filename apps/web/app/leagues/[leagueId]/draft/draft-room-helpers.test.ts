@@ -27,9 +27,14 @@ const baseLeague: DraftStateResult["league"] = {
   timerSeconds: 60,
 };
 
+// Phase 5.1: members are keyed by membershipId, not userId — currentMemberId
+// (the picker on the clock) and Pick.leagueMemberId both resolve against
+// membershipId. A BOT member (m3) has no userId, exercising the
+// human-viewer-vs-bot-picker distinction isYourTurn exists to get right.
 const members: DraftStateResult["members"] = [
-  { membershipId: "m1", userId: "user-1", name: "Alice", image: null, draftSlot: 1 },
-  { membershipId: "m2", userId: "user-2", name: "Bob", image: null, draftSlot: 2 },
+  { membershipId: "m1", participantType: "HUMAN", userId: "user-1", name: "Alice", image: null, draftSlot: 1 },
+  { membershipId: "m2", participantType: "HUMAN", userId: "user-2", name: "Bob", image: null, draftSlot: 2 },
+  { membershipId: "m3", participantType: "BOT", userId: null, name: "CPU 1", image: null, draftSlot: 3 },
 ];
 
 function stateWithDraft(draft: DraftStateResult["draft"]): DraftStateResult {
@@ -47,7 +52,7 @@ describe("getDraftPhase", () => {
         id: "d1",
         status: "ACTIVE",
         currentPickNumber: 3,
-        currentUserId: "user-1",
+        currentMemberId: "m1",
         turnDeadline: null,
       }),
     ).toBe("ACTIVE");
@@ -59,7 +64,7 @@ describe("getDraftPhase", () => {
         id: "d1",
         status: "COMPLETE",
         currentPickNumber: 64,
-        currentUserId: null,
+        currentMemberId: null,
         turnDeadline: null,
       }),
     ).toBe("COMPLETE");
@@ -71,12 +76,12 @@ describe("getCurrentPickerName", () => {
     expect(getCurrentPickerName(stateWithDraft(null))).toBeNull();
   });
 
-  it("returns null when the Draft is complete (currentUserId cleared)", () => {
+  it("returns null when the Draft is complete (currentMemberId cleared)", () => {
     const state = stateWithDraft({
       id: "d1",
       status: "COMPLETE",
       currentPickNumber: 64,
-      currentUserId: null,
+      currentMemberId: null,
       turnDeadline: null,
     });
     expect(getCurrentPickerName(state)).toBeNull();
@@ -87,21 +92,32 @@ describe("getCurrentPickerName", () => {
       id: "d1",
       status: "ACTIVE",
       currentPickNumber: 1,
-      currentUserId: "user-2",
+      currentMemberId: "m2",
       turnDeadline: null,
     });
     expect(getCurrentPickerName(state)).toBe("Bob");
   });
 
-  it("falls back to a safe placeholder for an unmatched currentUserId", () => {
+  it("falls back to a safe placeholder for an unmatched currentMemberId", () => {
     const state = stateWithDraft({
       id: "d1",
       status: "ACTIVE",
       currentPickNumber: 1,
-      currentUserId: "some-other-user",
+      currentMemberId: "some-other-membership",
       turnDeadline: null,
     });
     expect(getCurrentPickerName(state)).toBe("Unknown manager");
+  });
+
+  it("returns a BOT member's normalized (displayName-derived) name when it is on the clock", () => {
+    const state = stateWithDraft({
+      id: "d1",
+      status: "ACTIVE",
+      currentPickNumber: 1,
+      currentMemberId: "m3",
+      turnDeadline: null,
+    });
+    expect(getCurrentPickerName(state)).toBe("CPU 1");
   });
 });
 
@@ -115,7 +131,7 @@ describe("isYourTurn", () => {
       id: "d1",
       status: "COMPLETE",
       currentPickNumber: 64,
-      currentUserId: null,
+      currentMemberId: null,
       turnDeadline: null,
     });
     expect(isYourTurn(state, "user-1")).toBe(false);
@@ -126,10 +142,22 @@ describe("isYourTurn", () => {
       id: "d1",
       status: "ACTIVE",
       currentPickNumber: 1,
-      currentUserId: "user-1",
+      currentMemberId: "m1",
       turnDeadline: null,
     });
     expect(isYourTurn(state, "user-1")).toBe(true);
+    expect(isYourTurn(state, "user-2")).toBe(false);
+  });
+
+  it("is false for every human viewer when a BOT is on the clock", () => {
+    const state = stateWithDraft({
+      id: "d1",
+      status: "ACTIVE",
+      currentPickNumber: 3,
+      currentMemberId: "m3",
+      turnDeadline: null,
+    });
+    expect(isYourTurn(state, "user-1")).toBe(false);
     expect(isYourTurn(state, "user-2")).toBe(false);
   });
 });
@@ -177,7 +205,7 @@ describe("formatCountdown", () => {
 function pick(pickNumber: number, playerId: string): DraftStateResult["picks"][number] {
   return {
     pickNumber,
-    userId: "user-1",
+    leagueMemberId: "m1",
     playerId,
     playerName: "Test Player",
     playerPosition: "RB",
@@ -222,7 +250,7 @@ describe("getRoundInfo", () => {
       id: "d1",
       status: "COMPLETE",
       currentPickNumber: 64,
-      currentUserId: null,
+      currentMemberId: null,
       turnDeadline: null,
     });
     expect(getRoundInfo(state)).toBeNull();
@@ -234,7 +262,7 @@ describe("getRoundInfo", () => {
       id: "d1",
       status: "ACTIVE",
       currentPickNumber: 1,
-      currentUserId: "user-1",
+      currentMemberId: "m1",
       turnDeadline: null,
     });
     expect(getRoundInfo(state)).toEqual({ round: 1, totalRounds: 16, pickNumber: 1 });
@@ -245,7 +273,7 @@ describe("getRoundInfo", () => {
       id: "d1",
       status: "ACTIVE",
       currentPickNumber: 5,
-      currentUserId: "user-1",
+      currentMemberId: "m1",
       turnDeadline: null,
     });
     expect(getRoundInfo(state)).toEqual({ round: 2, totalRounds: 16, pickNumber: 5 });
@@ -256,7 +284,7 @@ describe("getRoundInfo", () => {
       id: "d1",
       status: "ACTIVE",
       currentPickNumber: 64,
-      currentUserId: "user-1",
+      currentMemberId: "m1",
       turnDeadline: null,
     });
     expect(getRoundInfo(state)).toEqual({ round: 16, totalRounds: 16, pickNumber: 64 });

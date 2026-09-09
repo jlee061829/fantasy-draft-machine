@@ -36,7 +36,7 @@ export function deriveDraftBoard(state: DraftStateResult): DraftBoard {
 
   // Only ACTIVE has a meaningful "on the clock" cell — PENDING (no Draft)
   // has nothing to highlight, and COMPLETE has already cleared
-  // currentUserId/turnDeadline (Milestone 3.2), so treating any non-ACTIVE
+  // currentMemberId/turnDeadline (Milestone 3.2), so treating any non-ACTIVE
   // status as "nothing highlighted" needs no special-casing beyond this one
   // guard.
   const currentPickNumber =

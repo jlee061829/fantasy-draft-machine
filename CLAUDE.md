@@ -651,22 +651,68 @@ Last updated: September 2026
   - the actual compiled CSS chunk was fetched from the build output and confirmed to contain the `@media (max-width: 860px)` breakpoint and every new class exactly as written, including the `.fdm-current-pick.fdm-user-column` precedence rule
   - live interactive browser verification (visual screenshot, resizing to watch the grid collapse, clicking/tabbing) was not completed this milestone — the tool capable of injecting the dev session's httpOnly auth cookie into a real Playwright browser context was blocked by the environment's own permission classifier as RCE-equivalent, independent of the standing one-OAuth-account limitation
   - populated ACTIVE/COMPLETE multi-user live-room behavior (`TurnBanner`, `TeamRosterPanel`, pending-pick UX, the resync fix itself) remains unreachable for manual testing under the standing constraint — the live room now unconditionally requires a real Draft, which requires a fully-joined league that cannot be legitimately filled by one real account — and remains verified by the pure-helper tests above plus the existing Phase 3 real-Postgres/real-socket suites, consistent with every prior milestone's verification precedent
+- Phase 5 Milestone 5.1 — Bot Membership / Participant Data Model:
+  - introduced the unified human/bot draft-participant model: `LeagueMember` now represents either a real authenticated human or a server-owned bot, rather than always implying a human `User`
+  - added `LeagueMemberType = HUMAN | BOT` (default `HUMAN`)
+  - `LeagueMember.userId` is now nullable; `LeagueMember.displayName` is a new BOT-only field
+  - HUMAN shape: non-null `userId`, null `displayName`, backed by a real `User` row
+  - BOT shape: null `userId`, non-null `displayName`; no `User`/`Account`/`Session`/`SocketTicket` row ever exists for a bot — a bot is never a fake OAuth identity
+  - a bot's durable participant identity is its own `LeagueMember.id`
+  - the HUMAN/BOT shape invariant is enforced by a hand-written database `CHECK` constraint, not by TypeScript — Prisma 7.9.1 has no `@@check` schema DSL (confirmed via `prisma validate` against a scratch schema before writing the migration), so the constraint is invisible to `schema.prisma` and must be preserved by hand if this table is ever touched by a bare `prisma migrate dev`
+  - `@@unique([leagueId, userId])` and `@@unique([leagueId, draftSlot])` are unchanged; PostgreSQL's standard (non-version-gated) NULL-distinct unique-index behavior means multiple BOT rows (`userId = null`) coexist under the same constraint that still rejects a duplicate human — verified with a real-Postgres integration test, not assumed from documentation
+  - `draftSlot` uniqueness remains the positional authority for both HUMAN and BOT rows; no second slot-ownership table was introduced
+  - identity split introduced by this milestone:
+    - `User.id` — authentication identity: Auth.js/session identity, SocketTicket/socket authentication, commissioner/owner authorization, human membership lookup by `(leagueId, userId)`
+    - `LeagueMember.id` — draft participant identity: draft-slot ownership, current-turn ownership, pick attribution, HUMAN or BOT alike
+    - these were the same thing for every participant before this milestone; bots are the reason they are now two distinct identities
+  - `Draft.currentUserId` removed; replaced by `Draft.currentMemberId`, an FK to `LeagueMember.id` with `onDelete: SetNull` — a live "who's on the clock" pointer, not historical attribution, so clearing it on a hypothetical LeagueMember deletion is harmless
+  - `Pick.userId` removed; replaced by `Pick.leagueMemberId`, a required FK to `LeagueMember.id` with `onDelete: Restrict` — the historical-attribution FK: deleting a `LeagueMember` that has ever picked now fails loudly at the database level rather than silently erasing that participant's Pick history
+  - `User.picks`/`User.currentTurnDrafts` back-relations removed; Pick/Draft no longer FK to `User` for these
+  - `startDraft`'s fullness rule is unchanged (`LeagueMember count === teamCount`) — a BOT row counts toward that total exactly like a HUMAN row, with zero special-casing, because both are just `LeagueMember` rows; only the first-picker write changed, from `firstPicker.userId` to `firstPicker.id` (`Draft.currentMemberId`)
+  - `submitPick`'s public signature and human-facing behavior are unchanged (`submitPick(leagueId, requestingUserId, playerId)`); internally it now resolves the requesting human's own `LeagueMember` by `(leagueId, userId)` (still userId-keyed — a human always authenticates with a real `User.id`), compares that membership's `.id` to `Draft.currentMemberId`, and writes `Pick.leagueMemberId` as that membership's `.id`. Bots never call this authenticated-human entry point
+  - `applyPick`'s next-picker write got simpler, not just renamed: it now uses the next `LeagueMember`'s own `.id` directly, with no `.userId` hop
+  - `processExpiredDraftTurn` (timer-expiry autopick) is a mechanical rename only (`currentUserId`→`currentMemberId` read, `leagueMemberId` write) with no behavior change for the human-only case that exists today
+  - known, explicitly deferred gap: `processExpiredDraftTurn` does not inspect `currentMember.participantType` anywhere — if a BOT's `turnDeadline` ever elapsed, the sweep would autopick for it exactly like a human, with no guard. This is currently unreachable in production: the only two `LeagueMember`-creation call sites (`join-league.ts`, `create-league.ts`) never set `participantType`, relying solely on the schema default `HUMAN`, and no API route exposes it — the only place a `BOT` row can be created today is the test-only `createTestBotMember` helper. **Phase 5.3 must explicitly resolve bot-turn orchestration vs. timer-expiry autopick ordering before bot creation becomes product-accessible; this is not resolved by 5.1.**
+  - member-facing DTOs (`DraftStateMember`, `LeagueDetailResult.members`, `ReorderLeagueMembersResult.members`) are normalized once, in `packages/database`/the DTO builder, to `{ membershipId, participantType, userId: string | null, name, image, draftSlot }` — `name`/`image` resolve as `HUMAN → user.name/user.image`, `BOT → displayName/null`, so UI components read one normalized `name`/`image` pair and never branch on `user.name ?? displayName` themselves
+  - `TeamRosterPanel`'s roster selector and `deriveTeamRosters`'s grouping key are `membershipId`, not `userId` — a real bug the nullable-`userId` change would otherwise have introduced (every BOT would have collapsed onto the same `""` selector value once more than one bot exists in a league); `member-order-form.tsx` and `reorder-league-members.ts` needed the same nullable-`userId`/normalized-name treatment
+  - no bot player selection, bot turn scheduler, automatic bot picks, mock-draft UI, fill-empty-slots UI, `PickSource`, strategy/difficulty/seed fields, position-aware bot drafting, temporary human-to-CPU takeover, fake OAuth identities, or socket/auth changes were introduced; `wasAutopick` is unchanged
+- Milestone 5.1 verification:
+  - `packages/database`: 89/89 tests passing (75 base + 14 new)
+  - `apps/web`: 317/317 tests passing (312 base + 5 new)
+  - `apps/socket-server`: 30/30 tests passing (unaffected — no handler/protocol source changes)
+  - workspace-wide typecheck and build pass
+  - new coverage: HUMAN/BOT shape acceptance, CHECK-constraint rejection of all four invalid shapes, multiple-BOT null-`userId` coexistence, `draftSlot` uniqueness regardless of participant type, a mixed HUMAN/BOT league filling to `teamCount` and starting successfully, a BOT explicitly occupying `draftSlot` 1 becoming `Draft.currentMemberId`, normalized HUMAN/BOT member DTOs (including mixed-membership ordering), a BOT-attributed `Pick` persisting/reading with no `User` row involved, and every existing human/manual/autopick SNAKE/LINEAR/concurrency test preserved unchanged in behavior
+- Milestone 5.1 final verification pass:
+  - the migration's historical backfill was additionally exercised against **populated** pre-5.1-shaped data, not only against the (actually-empty) dev database: a disposable PostgreSQL database was migrated through the immediately-preceding migration only, seeded with 2 Users, 1 League, 2 LeagueMembers, 1 ACTIVE Draft with an old `currentUserId`, and 2 Picks with an old `userId` (one manual, one `wasAutopick: true`), then the real Phase 5.1 migration was applied on top
+  - verified directly in Postgres afterward: `Draft.currentMemberId` and both `Pick.leagueMemberId` values resolved to exactly the correct `LeagueMember` rows; `Draft`/`Pick` row counts were unchanged (1→1, 2→2); `pickNumber`/`playerId`/`wasAutopick` were unchanged; the old `currentUserId`/`userId` columns were fully gone; the migration's own internal backfill-verification blocks did not fire; `prisma migrate status` reported clean — the disposable database was dropped afterward
+  - pre-migration dev-database counts were re-checked live rather than trusted from this document's own history: `Draft`: 0, `Pick`: 0, `League`: 7, `LeagueMember`: 7 — the populated-data replay above is what actually exercises the backfill SQL end-to-end
+  - discovered and recorded, not fixed: deleting a League that already has Draft/Pick history fails. Verified directly against `fantasy_draft_test`: seeding a League/LeagueMember/Draft/Pick and then `DELETE FROM "League"` raises `ERROR: update or delete on table "LeagueMember" violates foreign key constraint "Pick_leagueMemberId_fkey"` — Postgres processes the `League → LeagueMember` cascade before the `League → Draft → Pick` cascade has removed the referencing Pick row, so the new `Restrict` on `Pick.leagueMemberId` trips first. The failure is transactional and clean (all rows verified still present afterward, then manually removed in FK-safe order) — not a data-corruption risk. No delete-League feature exists in the product today, so this is not a current blocker, but it **must** be resolved before any future League-deletion feature ships. See "Known issue — League deletion blocked by Pick → LeagueMember FK ordering" below
+  - re-confirmed the bot/autopick deferred risk by direct inspection rather than re-asserting it: `packages/database/src/drafts/autopick.ts` never reads `participantType`; the only two production `LeagueMember.create` call sites never set it
+  - repo-wide audit repeated for `currentUserId`, `currentUser`, `Pick.userId`/`pick.userId`, literal `"currentUserId"`, `leagueId_userId`, `$queryRaw`, `$executeRaw`: the Draft row-lock raw SQL correctly reads `"currentMemberId"`; every remaining `userId`-keyed lookup is intentional human-authentication logic (join, commissioner authorization, `submitPick`'s requester resolution), not a missed rename
+  - `apps/web/next-env.d.ts` confirmed clean; `apps/web/tsconfig.tsbuildinfo`'s only diff was regenerated TypeScript build-cache output and was restored; the regenerated Prisma client under `packages/database/src/generated/prisma/` remains intentionally tracked, per this repository's existing convention
+  - no source or test file was changed during this verification pass — it was disposable-database SQL work and read-only inspection only, so no regression suite was rerun
 
 ### Current phase
 
-**Phase 4 — Client Experience — COMPLETE**
+**Phase 5 — Bot Managers + Mock Drafts — IN PROGRESS**
 
 Completed:
 
 - Phase 1 — Foundation — COMPLETE
 - Phase 2 — League Management — COMPLETE
 - Phase 3 — Realtime Draft Engine — COMPLETE (Milestones 3.1, 3.2, 3.3a, 3.3b, 3.4; see "Milestone 3.5 status" below for why there is no separate 3.5)
-- Phase 4 Milestone 4.1 — Commissioner Draft Start UI — COMPLETE
-- Phase 4 Milestone 4.2 — Draft Room Shell + Live Turn State — COMPLETE
-- Phase 4 Milestone 4.3 — Available Players + Search/Filtering — COMPLETE
-- Phase 4 Milestone 4.4 — Production Pick Submission UX — COMPLETE
-- Phase 4 Milestone 4.5 — Pre-Draft Experience + Live Draft Room — COMPLETE
-- Phase 4 Milestone 4.6 — Draft Room UX Hardening + Phase 4 Closeout — COMPLETE
+- Phase 4 — Client Experience — COMPLETE (Milestones 4.1–4.6)
+- Phase 5 Milestone 5.1 — Bot Membership / Participant Data Model — COMPLETE
+
+Current Phase 5 status:
+- 5.1 — Bot Membership / Participant Data Model — **COMPLETE**
+- 5.2 — Basic Best-Available Bot Strategy — **NEXT**
+- 5.3 — Server-Side Bot Turn Orchestration — not started
+- 5.4 — Mock Draft Creation / Fill Empty Slots with Bots — not started
+- 5.5 — Position-Aware Bot Strategy — not started
+- 5.6 — Bot Strategy Variants + Phase 5 Closeout — not started
+
+**Phase 5 is not complete.** Only the data-model foundation (5.1) has shipped; no bot behavior, orchestration, or UI exists yet — see Milestone 5.1's own completed-work notes above for the exact boundary of what shipped.
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -716,7 +762,16 @@ Current Phase 4 capabilities:
 - a successful `draft:pick` ack now triggers an immediate `draft:join` resync rather than only waiting on the room-wide broadcast, substantially narrowing the previously-documented ack-success/broadcast-loss stuck-pending edge with no protocol change
 - a `COMPLETE` Draft hides the Available Players Action column entirely (reusing the panel's existing read-only mode) instead of showing disabled Draft buttons
 
-**Phase 4 exit criteria satisfied.** All six milestones (4.1–4.6) are complete, and Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect. Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) remain complete and frozen as well. Horizontal scalability (Redis pub/sub across multiple socket-server instances), rate limiting, structured error responses, Playwright E2E coverage, and CI remain explicitly deferred to Phase 5, which has not yet begun.
+Current Phase 5 capabilities (Milestone 5.1 only):
+- `LeagueMember` rows may be `HUMAN` (a real `User`) or `BOT` (no `User`/OAuth identity at all), enforced by a database `CHECK` constraint
+- a bot's participant identity is its own `LeagueMember.id`; there is no fake Auth.js identity anywhere for a bot
+- multiple bots may coexist in one league (`userId = null` rows don't collide under `@@unique([leagueId, userId])`)
+- `Draft.currentMemberId` and `Pick.leagueMemberId` identify the current picker / a pick's author by participant identity, not user identity, so a HUMAN or a BOT can equally be on the clock or own a pick
+- `startDraft` and `submitPick`'s human-facing behavior are otherwise unchanged; a BOT LeagueMember row fills a draft slot exactly like a HUMAN one for fullness purposes
+- member-facing DTOs expose a normalized `participantType`/`userId`/`name`/`image` shape so existing UI (Draft Board, Team Roster, member ordering) can render a mixed HUMAN/BOT league without per-component branching
+- no bot ever picks, is scheduled, or appears in any product-facing creation flow yet — see Milestone 5.1's own notes for the full boundary, and "Known issue — League deletion blocked by Pick → LeagueMember FK ordering" below for a verified, still-open limitation this milestone surfaced
+
+**Phase 4 exit criteria satisfied.** All six milestones (4.1–4.6) are complete, and Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect. Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) remain complete and frozen as well. Horizontal scalability (Redis pub/sub across multiple socket-server instances), rate limiting, structured error responses, Playwright E2E coverage, and CI remain explicitly deferred to Phase 5's own closeout (5.6) and beyond; Phase 5 itself has now begun (Milestone 5.1 complete, 5.2 next).
 
 ### Not yet implemented
 
@@ -732,24 +787,32 @@ Current Phase 4 capabilities:
 - roster-position enforcement, including roster-aware autopick selection, if later required
 - ML recommendation system
 - GitHub Actions CI
+- bot player selection, bot turn scheduler, automatic bot picks (Phase 5.1 built the data model only — see "Current implementation status")
+- mock-draft creation UI, fill-empty-slots UI
+- `Pick` "source" concept (`PickSource`) distinguishing MANUAL/AUTOPICK/BOT — deferred; see "Settled decisions"
+- bot strategy/difficulty/seed configuration fields
+- position-aware bot drafting
+- temporary human-to-CPU turn delegation (distinct from bot-owned mock-draft slots — see "Future roadmap notes")
+- resolving the timer-autopick sweep's lack of `participantType` awareness before bot creation becomes product-accessible — explicitly Phase 5.3's job, not yet started (see "Turn-expiration and autopick conventions" and "Build phases")
+- fixing League deletion's FK-ordering failure against Draft/Pick history — see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering"; not a current blocker since no delete-League feature exists, but unresolved
 
 ### Future roadmap notes (not scoped as a phase)
 
 Ideas discussed for a possible future phase, not yet scoped, designed, or implemented. Nothing below is committed work, informs any current-phase decision, or should be treated as a data-model/implementation change that has happened.
 
-**Bot Managers + Mock Drafts (future phase, unscoped)**
+**Bot Managers + Mock Drafts — superseded by Phase 5 (Milestone 5.1 complete as of this update).** This subsection is preserved for historical/design-rationale context; it is no longer "unscoped" — see "Build phases" for the committed 5.1–5.6 milestone list, "Settled decisions" for what 5.1 actually locked in, and the Milestone 5.1 completed-work notes above for exactly what shipped. The bullets below predate implementation and are evaluated one at a time as each assumption turned out to hold or need adjustment:
 
-- bots would be first-class draft participants, not fake OAuth `User`/`Account`/`Session` rows — no Auth.js identity is manufactured for a bot
-- bot picks would run server-side (most likely from `apps/socket-server`, alongside the existing turn-expiration sweep), never as browser-side automation
-- a bot's turn would reuse the same authoritative transactional pick pipeline (`submitPick`/`applyPick`) every other pick source already uses — no second pick-writing path
-- a bot-manager pick is intentionally distinct from a human's timer-expiry autopick, even though both are machine-selected; a future `Pick` "source" concept might eventually distinguish `MANUAL`, `AUTOPICK` (timer expiry), and `BOT` (an intentional non-human manager) rather than overloading the existing `wasAutopick` boolean for both
-- a first bot implementation would likely be a simple ADP/best-available selector, reusing `selectAutopickPlayerId`'s existing two-tier approach; roster/position-aware bot strategy would be later, optional work
-- a mock-draft mode could fill empty League slots with bots; a separately-discussed idea — temporarily delegating an existing real human's slot to CPU control — is a distinct, later concern from bot-owned mock-draft slots and should not be conflated with it
+- bots would be first-class draft participants, not fake OAuth `User`/`Account`/`Session` rows — no Auth.js identity is manufactured for a bot. **Held**: a bot is a `LeagueMember` row with `participantType = BOT`, never a fake `User`.
+- bot picks would run server-side (most likely from `apps/socket-server`, alongside the existing turn-expiration sweep), never as browser-side automation. **Not yet built** — this is Phase 5.3's job; 5.1 only made the data model capable of representing a bot on the clock.
+- a bot's turn would reuse the same authoritative transactional pick pipeline (`submitPick`/`applyPick`) every other pick source already uses — no second pick-writing path. **Still the plan**: `applyPick` already takes a `leagueMemberId`, not a `userId`, so a future bot caller needs no new write path.
+- a bot-manager pick is intentionally distinct from a human's timer-expiry autopick, even though both are machine-selected; a future `Pick` "source" concept might eventually distinguish `MANUAL`, `AUTOPICK` (timer expiry), and `BOT` (an intentional non-human manager) rather than overloading the existing `wasAutopick` boolean for both. **Deliberately not done in 5.1**: `Pick.leagueMemberId` joined against `LeagueMember.participantType` already lets a caller derive MANUAL/AUTOPICK(human)/BOT with zero new columns, so `PickSource` remains deferred until that derivation is shown to be insufficient.
+- a first bot implementation would likely be a simple ADP/best-available selector, reusing `selectAutopickPlayerId`'s existing two-tier approach; roster/position-aware bot strategy would be later, optional work. **Still the plan** — this is Phase 5.2.
+- a mock-draft mode could fill empty League slots with bots; a separately-discussed idea — temporarily delegating an existing real human's slot to CPU control — is a distinct, later concern from bot-owned mock-draft slots and should not be conflated with it. **Still the plan** — mock-draft slot-filling is Phase 5.4; temporary human-to-CPU delegation remains unscoped and explicitly out of 5.1's data model.
 
 ### Deferred decisions
 
 - Socket authentication strategy — decide before Phase 3
-- Railway vs. Fly.io for socket-server deployment — decide before Phase 6
+- Railway vs. Fly.io for socket-server deployment — decide before Phase 7 (Deploy; renumbered from Phase 6 when Phase 5 was reassigned to Bot Managers + Mock Drafts — see "Build phases")
 
 ### Settled decisions
 
@@ -881,7 +944,7 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
 - `(draftId, pickNumber)` uniqueness prevents two Pick rows from owning the same overall pick
 - manual Picks always persist `wasAutopick = false`
 - total Draft length is `teamCount * rosterSize`
-- a completed Draft retains the final `currentPickNumber` and clears `currentUserId` and `turnDeadline`
+- a completed Draft retains the final `currentPickNumber` and clears `currentMemberId` (renamed from `currentUserId` by Phase 5.1 — see the Phase 5.1 identity-split bullets below) and `turnDeadline`
 - successful non-final Picks receive a fresh server-owned deadline based on `League.timerSeconds`
 - transactional pick submission currently belongs to `apps/web`; do not import `apps/web` implementation code directly into `apps/socket-server`
 - Milestone 3.3 must explicitly determine the reusable service/package boundary before Socket.IO consumes authoritative draft mutations
@@ -1007,6 +1070,29 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
 - multiple valid authoritative `DraftStateResult` snapshots may arrive for one pick (the resync's own, and/or the room broadcast); wholesale replacement on each is always safe, and this is not treated as a literal no-op when a snapshot repeats
 - no defensive timeout was added for the resync's own ack being lost; that residual case is accepted as bounded by Socket.IO's heartbeat-driven `disconnect`, not defended against directly
 - accessibility conventions going forward: native semantics first, `scope="col"`/`scope="row"` table headers, real (visually-hidden where appropriate) form labels, player-specific accessible button names, `role="alert"` for errors, `role="status" aria-live="polite"` scoped narrowly to infrequent status changes (never wrapping a per-second-updating countdown), native focus outlines never removed, color never the sole carrier of state/position meaning
+- Phase 5.1 identity split: `User.id` is authentication identity (Auth.js/session identity, SocketTicket/socket authentication, commissioner/owner authorization, human membership lookup by `(leagueId, userId)`); `LeagueMember.id` is draft participant identity (draft-slot ownership, current-turn ownership, pick attribution, HUMAN or BOT alike) — these were the same thing for every participant before bots existed
+- bots are never fake Users — no `User`/`Account`/`Session`/`SocketTicket` row is ever created for a bot; a bot's durable identity is its own `LeagueMember.id`
+- `LeagueMember.participantType` is `LeagueMemberType.HUMAN | LeagueMemberType.BOT`, defaulting to `HUMAN`
+- `LeagueMember.userId` is nullable; `LeagueMember.displayName` is a new BOT-only nullable field
+- HUMAN shape: non-null `userId`, null `displayName`. BOT shape: null `userId`, non-null `displayName`
+- the HUMAN/BOT shape invariant is enforced by a hand-written database `CHECK` constraint, not by TypeScript — Prisma 7.9.1 has no `@@check` schema DSL (confirmed via `prisma validate` against a scratch schema before writing the Phase 5.1 migration); this constraint is invisible to `schema.prisma` and must be preserved by hand if `LeagueMember` is ever touched by a bare `prisma migrate dev`
+- `@@unique([leagueId, userId])` and `@@unique([leagueId, draftSlot])` are unchanged by Phase 5.1
+- a duplicate non-null human membership is still rejected by `@@unique([leagueId, userId])`; multiple BOT rows (`userId = null`) coexist under the same constraint via PostgreSQL's standard (non-version-gated) NULL-distinct unique-index behavior — verified with a real-Postgres integration test, not assumed from documentation
+- `draftSlot` uniqueness remains the sole positional authority for both HUMAN and BOT rows; no second slot-ownership table exists
+- `Draft.currentUserId` is removed; `Draft.currentMemberId` (FK → `LeagueMember.id`, `onDelete: SetNull`) is the participant currently on the clock — a live pointer, not historical attribution, so it may be cleared safely
+- `Pick.userId` is removed; `Pick.leagueMemberId` (FK → `LeagueMember.id`, `onDelete: Restrict`) is a Pick's historical attribution — required, and deliberately not cascade-deletable, so deleting a `LeagueMember` who has ever picked fails loudly rather than silently erasing draft history
+- current-turn identity and pick attribution both moved from user identity to participant identity because a bot can be on the clock or own a pick with no `User` row to point to; pick history must support both humans and bots without inventing a fake human
+- `startDraft`'s fullness rule is unchanged (`LeagueMember count === teamCount`); a BOT row counts toward that total exactly like a HUMAN row; only the first-picker write changed, from `firstPicker.userId` to `firstPicker.id` (written to `Draft.currentMemberId`)
+- `submitPick`'s public signature and human-facing behavior are unchanged; internally: resolve the requesting human's own `LeagueMember` by `(leagueId, userId)` → compare that membership's `.id` to `Draft.currentMemberId` → write `Pick.leagueMemberId` as that membership's `.id`. Public/manual human pick APIs remain user-authenticated; bots never use this authenticated-user path
+- `processExpiredDraftTurn` (timer-expiry autopick) now reads/writes `currentMemberId`/`leagueMemberId`; no intended behavior change for human autopick
+- known, explicitly unresolved risk: autopick does not inspect `participantType` — a BOT's expired turn would be processed exactly like a human's today. Currently unreachable because no production path creates a BOT `LeagueMember`. **Phase 5.3 must explicitly resolve bot-turn orchestration vs. timer-autopick ordering before bot creation becomes product-accessible — this is not resolved by 5.1 and must not be treated as resolved.**
+- member-facing DTOs normalize HUMAN/BOT presentation to one shape: `{ membershipId, participantType, userId: string | null, name, image, draftSlot }`, resolved as `HUMAN → name = user.name, image = user.image` and `BOT → name = displayName, image = null`
+- UI components read the already-normalized `name`/`image` and never branch on `user.name ?? displayName` themselves
+- roster/member-order selection keys (`TeamRosterPanel`, `deriveTeamRosters`, `member-order-form.tsx`) use `membershipId`, never `userId`, precisely because `userId` is null and non-unique across bots — this is load-bearing, not stylistic: keying by `userId` would collapse every bot onto the same selector value once more than one bot exists in a league
+- Phase 5.1's migration backfill was verified twice: once implicitly against the (actually empty) dev database, and explicitly against a disposable database seeded with populated pre-5.1-shaped data (2 Users, 1 League, 2 LeagueMembers, an ACTIVE Draft with an old `currentUserId`, and 2 Picks with an old `userId`) — `Draft.currentMemberId` and both `Pick.leagueMemberId` values resolved correctly, row counts and pick/player/autopick fields were unchanged, and the migration's own internal verification blocks did not fire
+- deleting a League with Draft/Pick history currently fails at the database level (`Pick_leagueMemberId_fkey` `Restrict` trips before the `Draft`/`Pick` cascade completes) — verified, transactional/clean, not a current product blocker since no delete-League feature exists, but it must be resolved before one ships; see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering"
+- `wasAutopick` is unchanged by Phase 5.1; no `PickSource` field was added — `Pick.leagueMemberId` joined against `LeagueMember.participantType` already lets a caller derive MANUAL/AUTOPICK(human)/BOT with zero new columns, so `PickSource` stays deferred until that derivation is shown to be insufficient
+- Phase 5.1 introduced no bot player selection, bot turn scheduler, automatic bot picks, mock-draft UI, fill-empty-slots UI, strategy/difficulty/seed fields, position-aware bot drafting, temporary human-to-CPU takeover, fake OAuth identities, or socket/auth changes; it did not touch the pre-existing P2002 constraint-metadata maintenance issue
 
 ## Non-negotiable engineering goals
 
@@ -1235,7 +1321,7 @@ Initial Draft state:
 
 - `status = ACTIVE`
 - `currentPickNumber = 1`
-- `currentUserId = first picker`
+- `currentMemberId = first picker's own LeagueMember.id` (Phase 5.1: renamed from `currentUserId`; identifies the participant, HUMAN or BOT, not a User)
 - `turnDeadline = server time + timerSeconds`
 
 `Draft.leagueId @unique` is the database-level duplicate-draft backstop.
@@ -1270,33 +1356,35 @@ The client does not submit:
 - `pickNumber`
 - `draftSlot`
 - `wasAutopick`
-- `currentUserId`
+- `currentMemberId`
 - `turnDeadline`
 
-Manual pick submission flow:
+Manual pick submission flow (updated by Phase 5.1 — see "Settled decisions" and Milestone 5.1's completed-work notes for the identity-migration rationale):
 
-1. verify the requester is a current `LeagueMember`
+1. verify the requester is a current `LeagueMember`, resolving that human's own membership by `(leagueId, userId)` — this step stays userId-keyed on purpose: a human always authenticates with a real `User.id`
 2. lock the League's Draft row with `SELECT ... FOR UPDATE`
 3. require an existing Draft
 4. require `Draft.status = ACTIVE`
-5. require `Draft.currentUserId === requestingUserId`
+5. require the requester's own `LeagueMember.id === Draft.currentMemberId` (not a `userId` comparison — turn ownership is participant identity, so this is equally correct if the current picker is a BOT: it simply never matches a human requester's membership id)
 6. load immutable League draft configuration
 7. require the selected Player to exist
 8. reject a Player already drafted in this Draft
-9. create the Pick at `Draft.currentPickNumber` with `wasAutopick = false`
+9. create the Pick at `Draft.currentPickNumber` with `leagueMemberId` = the requester's own `LeagueMember.id` and `wasAutopick = false`
 10. determine whether the Pick is final
 11. for a non-final Pick:
     - increment `currentPickNumber`
     - compute the next `draftSlot` with `getPickerForPickNumber`
-    - resolve that slot to its `LeagueMember.userId`
-    - update `currentUserId`
+    - resolve that slot directly to its `LeagueMember.id` (no `.userId` hop needed — this got simpler in 5.1, not just renamed)
+    - update `currentMemberId`
     - set a new server-owned `turnDeadline`
 12. for the final Pick:
     - set `status = COMPLETE`
     - retain `currentPickNumber = totalPicks`
-    - set `currentUserId = null`
+    - set `currentMemberId = null`
     - set `turnDeadline = null`
 13. commit and return an explicit DTO
+
+Bots never call this authenticated-human entry point (step 1 requires a real `userId`); a future bot-turn orchestrator (Phase 5.3) will call the same underlying `applyPick` directly with the bot's own `LeagueMember.id`, bypassing steps 1 and 5.
 
 The Draft row is the serialization point for turn consumption.
 
@@ -1347,6 +1435,8 @@ Do not duplicate the draft-state DTO separately across web, database, and socket
 
 Do not expose raw Prisma rows or Auth.js persistence fields through HTTP or realtime state payloads.
 
+As of Phase 5.1: `DraftStateMember` additionally carries `participantType: "HUMAN" | "BOT"` and a nullable `userId`; `name`/`image` are already normalized (`HUMAN → user.name/user.image`, `BOT → displayName/null`) by the time they reach this DTO, so consumers never branch on participant type themselves. `Draft.currentUserId` was renamed to `currentMemberId` and `DraftStatePick.userId` to `leagueMemberId` — both now identify a `LeagueMember`, not a `User` — see "Settled decisions" for the full rationale.
+
 ### Socket.IO draft protocol conventions
 
 Socket authentication:
@@ -1389,7 +1479,7 @@ League rooms are keyed as:
 
 Draft completion is represented by the normal authoritative `draft:state` payload:
 - `status === "COMPLETE"`
-- `currentUserId === null`
+- `currentMemberId === null` (Phase 5.1: renamed from `currentUserId`)
 - `turnDeadline === null`
 
 Do not add a redundant `draft:complete` event unless a future requirement demonstrates a concrete need.
@@ -1443,6 +1533,7 @@ Autopick player selection (`selectAutopickPlayerId`), scoped to Players not yet 
 - tier 1: lowest `PlayerAdp.adp` for the League's `scoringFormat`
 - tier 2 (fallback when no undrafted Player has an ADP row for that format): lowest `Player.searchRank`, nulls last, `id asc` as a final deterministic tiebreak
 - no roster-position awareness yet
+- as of Phase 5.1: `processExpiredDraftTurn` reads/writes `Draft.currentMemberId`/`Pick.leagueMemberId` (participant identity) rather than a User id, but does **not** inspect `currentMember.participantType` anywhere — a BOT's expired turn would be autopicked exactly like a human's, with no guard. Currently unreachable in production (no path creates a BOT `LeagueMember` outside test fixtures — see Milestone 5.1's notes), but Phase 5.3 must explicitly resolve bot-turn orchestration vs. this sweep before bot creation becomes product-accessible, or the two could race/double-handle a bot's turn.
 - an exhausted pool (no undrafted Player at all) throws `AutopickExhaustedError` — an internal data/configuration invariant failure (the seeded Player pool is smaller than `teamCount * rosterSize`), not a normal skip; it is logged and left for a later sweep tick rather than crashing the sweep for other leagues. This is expected to remain retryable-but-failing until the underlying seed/roster-size mismatch is corrected — it is not something later sweeps are expected to resolve on their own.
 
 Restart recovery is a byproduct of polling live Postgres state rather than a separate feature: a freshly started socket-server process discovers exactly the same expired/future deadlines a long-running process would, with no in-memory timer state to reconstruct.
@@ -1653,6 +1744,36 @@ still use the older constraint-target parsing assumption and were intentionally 
 
 Fix these in a separate maintenance change rather than silently folding the cleanup into unrelated Phase 3 work.
 
+### Known issue — League deletion blocked by Pick → LeagueMember FK ordering
+
+Discovered and verified during Milestone 5.1's final verification pass, deliberately not fixed there per that pass's own scope (report, don't redesign).
+
+The current FK topology:
+
+- `LeagueMember.league` → `League`, `onDelete: Cascade` (unchanged, pre-5.1)
+- `Draft.league` → `League`, `onDelete: Cascade` (unchanged, pre-5.1)
+- `Pick.draft` → `Draft`, `onDelete: Cascade` (unchanged, pre-5.1)
+- `Pick.leagueMember` → `LeagueMember`, `onDelete: Restrict` (new in 5.1 — see "Settled decisions")
+
+Deleting a League with Draft/Pick history fails. Verified directly against `fantasy_draft_test` by seeding a League/LeagueMember/Draft/Pick and running `DELETE FROM "League"`:
+
+```
+ERROR:  update or delete on table "LeagueMember" violates foreign key constraint "Pick_leagueMemberId_fkey" on table "Pick"
+DETAIL:  Key (id)=(...) is still referenced from table "Pick".
+```
+
+PostgreSQL processes the `League → LeagueMember` cascade before the `League → Draft → Pick` cascade has had a chance to remove the Pick row that still references that LeagueMember, so the `Restrict` on `Pick.leagueMemberId` trips first and the whole `DELETE` rolls back.
+
+Verified properties of the failure:
+- transactional and clean — all four rows (League, LeagueMember, Draft, Pick) were confirmed still present afterward; nothing was partially removed
+- reproducible, not a one-off
+
+Why this isn't a current blocker:
+- no delete-League feature exists anywhere in the product today (no DELETE route, no UI)
+- the `Restrict` on `Pick.leagueMemberId` is deliberate (see "Settled decisions") and is not being loosened just to make this pass — it's exactly what protects historical pick attribution from a User-cascade-driven LeagueMember deletion
+
+This **must** be resolved before any future League-deletion feature ships — e.g. by deleting Draft/Pick rows explicitly (in FK-safe order) inside the same application transaction before the League row is deleted, rather than relying on DB-level cascade ordering across two independent cascade paths. Do not attempt to fix this by loosening `Pick.leagueMemberId`'s `Restrict` back to `Cascade`; that would silently defeat the historical-attribution guarantee 5.1 exists to provide.
+
 ### Pre-draft page and live draft-room conventions
 
 Pre-draft planning/viewing and live drafting are two distinct routes.
@@ -1718,13 +1839,15 @@ Prisma schema, roughly:
 
 - **User** — id, email, name, image, emailVerified, Auth.js relations, domain relations
 - **League** — id, name, ownerId, rosterSize, teamCount, inviteCode, timerSeconds, scoringFormat (`STANDARD | PPR | HALF_PPR`), draftType (`SNAKE | LINEAR`)
-- **LeagueMember** — id, leagueId, userId, draftSlot (int, 1-indexed). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`
+- **LeagueMember** — id, leagueId, userId (nullable), draftSlot (int, 1-indexed), participantType (`HUMAN | LeagueMemberType.BOT`, default `HUMAN`), displayName (nullable, BOT-only). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`; a hand-written `CHECK` constraint (Phase 5.1, not expressible via Prisma's schema DSL) enforces `HUMAN ⇔ (userId set, displayName null)` and `BOT ⇔ (userId null, displayName set)` — a bot has no `User` row at all
 - **Player** — id, sleeperId, fullName, position, nflTeam, searchRank, injuryStatus
 - **PlayerAdp** — id, playerId, format, adp (float, nullable), source. Unique on `(playerId, format)`
-- **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentUserId, turnDeadline, startedAt, completedAt
-- **Pick** — id, draftId, pickNumber, userId, playerId, wasAutopick, createdAt; unique `(draftId, pickNumber)` and `(draftId, playerId)`
+- **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentMemberId (FK → `LeagueMember.id`, `onDelete: SetNull`; Phase 5.1: renamed from `currentUserId`, which FK'd to `User.id`), turnDeadline, startedAt, completedAt
+- **Pick** — id, draftId, pickNumber, leagueMemberId (FK → `LeagueMember.id`, `onDelete: Restrict`; Phase 5.1: renamed from `userId`, which FK'd to `User.id`), playerId, wasAutopick, createdAt; unique `(draftId, pickNumber)` and `(draftId, playerId)`
 - **ChatMessage** — id, draftId, userId, body, createdAt
-- **SocketTicket** — id, token (unique), userId, expiresAt, consumedAt, createdAt; belongs to User with `ON DELETE CASCADE`
+- **SocketTicket** — id, token (unique), userId, expiresAt, consumedAt, createdAt; belongs to User with `ON DELETE CASCADE` — always a real human; bots never mint or need a SocketTicket
+
+`LeagueMemberType` enum: `HUMAN | BOT` (Phase 5.1).
 
 Auth.js persistence is modeled with `Account`, `Session`, and `VerificationToken` alongside the domain models above. Authentication is OAuth-only for now, with no password field on `User`. The app uses `User.name` as the canonical user-facing name field.
 
@@ -1732,6 +1855,7 @@ Auth.js persistence is modeled with `Account`, `Session`, and `VerificationToken
 
 - Unique index on `Pick(draftId, playerId)` — the database-level guarantee against double-drafting
 - Unique index on `Pick(draftId, pickNumber)` — guarantees no duplicate pick slots
+- `Pick.leagueMemberId`'s `onDelete: Restrict` (Phase 5.1) — the database-level guarantee that deleting a `LeagueMember` who has ever picked cannot silently erase that pick's historical attribution; see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering" for a verified interaction this introduces with League deletion
 
 Store ADP in a separate table keyed by scoring format rather than as a column on `Player`. Supporting multiple formats later is a painful migration otherwise.
 
@@ -1799,6 +1923,8 @@ Every pick runs inside a single database transaction:
 7. Commit
 
 If the transaction fails (e.g. on the unique constraint), reject the request through the caller's own error path — an HTTP error status, or a Socket.IO acknowledgement error code — rather than a standalone `pick:rejected` event (see "Socket.IO draft protocol conventions"). Never let a failed pick corrupt draft state or stall the room.
+
+**Superseded by "Pick submission conventions" above (and, as of Phase 5.1, by "Settled decisions").** This list predates both the actual field names and bot participants. Step 3/6's `draft.currentUserId`/`currentUserId` are `Draft.currentMemberId` today, compared against the requester's own `LeagueMember.id` rather than a raw user id, and step 5's `Pick` is written with `leagueMemberId`, not `userId` — see "Pick submission conventions" for the exact current flow. The transactional-safety guarantee this list was written to convey is unchanged; only the identity fields it names are stale.
 
 ### Turn order
 
@@ -1903,13 +2029,31 @@ Milestones:
 
 **Phase 4 exit criteria satisfied.** Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect.
 
-**Phase 5 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.
+**Phase 5 — Bot Managers + Mock Drafts — IN PROGRESS.** Renumbered into this slot from the original planning document (which called this slot "Hardening" — see below, now Phase 6); Phase 5 is committed, scoped, and underway, not a future-roadmap idea. Goal: server-owned bot draft participants — never fake Auth.js/OAuth `User` identities — that can occupy draft slots and eventually pick players, building toward mock drafts that fill empty League slots with bots.
+
+Milestones:
+- **5.1 Bot Membership / Participant Data Model — COMPLETE**
+- **5.2 Basic Best-Available Bot Strategy — NEXT**
+- **5.3 Server-Side Bot Turn Orchestration**
+- **5.4 Mock Draft Creation / Fill Empty Slots with Bots**
+- **5.5 Position-Aware Bot Strategy**
+- **5.6 Bot Strategy Variants + Phase 5 Closeout**
+
+Milestone 5.1 delivered the unified HUMAN/BOT `LeagueMember` participant model, the `User.id`-vs-`LeagueMember.id` identity split, the `Draft.currentUserId`→`currentMemberId` and `Pick.userId`→`Pick.leagueMemberId` migration, and normalized HUMAN/BOT member DTOs — see "Current implementation status" and "Settled decisions" for the full detail. No bot player selection, turn scheduling, automatic bot picks, or mock-draft UI exists yet.
+
+**Milestone 5.3 note:** server-side bot turn orchestration must be explicitly coordinated with the existing `apps/socket-server` timer-expiry autopick sweep (`processExpiredDraftTurn`) before bot creation becomes product-accessible, so the two mechanisms cannot race or double-handle the same bot's turn. Milestone 5.1 confirmed the sweep has no `participantType` awareness today (see "Turn-expiration and autopick conventions" and "Not yet implemented") — this is a real, currently-dormant gap that 5.3 must resolve as part of its own design, not something already handled or safe to defer again.
+
+*Done when: 5.1–5.6 are complete — a mock draft can be created, filled with bots, and drafted to completion with the same server-authoritative correctness guarantees as an all-human draft.*
+
+Phase 5 is not complete; only Milestone 5.1 has shipped.
+
+**Phase 6 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.
 *Done when: CI is green and two socket instances run safely against one Redis.*
 
-**Phase 6 — Deploy.** Next.js to Vercel. Socket server, Postgres, Redis to Railway or Fly. Environment config, CORS, production migrations, a real URL.
+**Phase 7 — Deploy.** Next.js to Vercel. Socket server, Postgres, Redis to Railway or Fly. Environment config, CORS, production migrations, a real URL.
 *Done when: you can send a friend the link and draft with them.*
 
-**Phase 7 — ML layer (only after everything above works).** Options, in increasing ambition: a value-over-replacement recommender (statistical, no training); a trained pick-likelihood model served from a small Python FastAPI service; or an LLM pick explainer using the Anthropic API with structured output validation, response caching, and graceful degradation when the call fails. If building the LLM version, the engineering *around* the model — validation, caching, cost tracking, fallback — is the interesting part.
+**Phase 8 — ML layer (only after everything above works).** Options, in increasing ambition: a value-over-replacement recommender (statistical, no training); a trained pick-likelihood model served from a small Python FastAPI service; or an LLM pick explainer using the Anthropic API with structured output validation, response caching, and graceful degradation when the call fails. If building the LLM version, the engineering *around* the model — validation, caching, cost tracking, fallback — is the interesting part.
 
 ## Conventions
 

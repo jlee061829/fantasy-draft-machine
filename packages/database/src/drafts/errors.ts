@@ -51,7 +51,7 @@ export class DraftNotActiveError extends Error {
   }
 }
 
-// Thrown when the requester is a real LeagueMember but Draft.currentUserId
+// Thrown when the requester is a real LeagueMember but Draft.currentMemberId
 // belongs to someone else. Deliberately 409, not 403: unlike commissioner
 // ownership (a static fact about the league), turn ownership rotates —
 // this same user will legitimately become the current picker again later,
@@ -76,7 +76,7 @@ export class PlayerNotFoundError extends Error {
 // @@unique([draftId, playerId]) backstop, which represent the same
 // underlying fact. Under the Draft-row FOR UPDATE lock, a genuine
 // concurrent hit on this constraint is expected to be rare in practice —
-// the currentUserId turn check upstream is what actually resolves most
+// the currentMemberId turn check upstream is what actually resolves most
 // races — but the constraint remains the real guarantee regardless.
 export class PlayerAlreadyDraftedError extends Error {
   constructor() {
