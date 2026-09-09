@@ -1,6 +1,6 @@
-import type { Prisma, ScoringFormat } from "../generated/prisma/client.js";
 import { prisma } from "../client.js";
 import { applyPick, lockDraftForLeague, type SubmitPickResult } from "./submit-pick.js";
+import { selectBestAvailablePlayerId } from "./player-selection.js";
 import { AutopickExhaustedError } from "./errors.js";
 
 // Discriminated result instead of thrown exceptions for every *expected*
@@ -30,45 +30,6 @@ export async function findExpiredActiveDraftLeagueIds(): Promise<string[]> {
   return drafts.map((draft) => draft.leagueId);
 }
 
-// Two-tier, deterministic, position-agnostic selection — Milestone 3.4
-// intentionally does not consider roster construction (see CLAUDE.md's
-// "Not yet implemented: roster-position enforcement"). Both queries scope
-// to Players not yet drafted in *this* Draft and run inside the caller's
-// locked transaction, so nothing else can insert a competing Pick for this
-// draft between selection and insert (see applyPick's caller in
-// processExpiredDraftTurn below) — no retry-on-conflict loop is needed.
-//
-// Tier 1: best (lowest) ADP for the league's scoring format.
-// Tier 2: fallback when no undrafted player has an ADP row for this format
-// — lowest searchRank, nulls last, with a final `id asc` tiebreak so the
-// choice is fully deterministic even when searchRank is also null for
-// every remaining candidate.
-async function selectAutopickPlayerId(
-  tx: Prisma.TransactionClient,
-  draftId: string,
-  scoringFormat: ScoringFormat,
-): Promise<string | null> {
-  const topByAdp = await tx.playerAdp.findFirst({
-    where: {
-      format: scoringFormat,
-      adp: { not: null },
-      player: { picks: { none: { draftId } } },
-    },
-    orderBy: { adp: "asc" },
-    select: { playerId: true },
-  });
-  if (topByAdp) {
-    return topByAdp.playerId;
-  }
-
-  const topBySearchRank = await tx.player.findFirst({
-    where: { picks: { none: { draftId } } },
-    orderBy: [{ searchRank: { sort: "asc", nulls: "last" } }, { id: "asc" }],
-    select: { id: true },
-  });
-  return topBySearchRank?.id ?? null;
-}
-
 // The turn-expiry counterpart to submitPick: the only other writer of Pick
 // rows. Locks the same Draft row submitPick locks, so the two serialize
 // against each other exactly as two concurrent submitPick calls already
@@ -85,7 +46,8 @@ async function selectAutopickPlayerId(
 //   3. read League config plainly (unlocked) — safe for the same reason
 //      submitPick's League read is: settings/reorder mutations already
 //      return 409 once a Draft exists
-//   4. select the best available player (selectAutopickPlayerId)
+//   4. select the best available player (selectBestAvailablePlayerId, the
+//      shared Phase 5.2 selection primitive — see player-selection.ts)
 //   5. delegate to the same applyPick used by submitPick, with
 //      wasAutopick: true — identical Pick-insert/completion/advance logic,
 //      so SNAKE/LINEAR progression and turnDeadline math can never drift
@@ -115,11 +77,14 @@ export async function processExpiredDraftTurn(leagueId: string): Promise<Autopic
       },
     });
 
-    const playerId = await selectAutopickPlayerId(tx, draft.id, league.scoringFormat);
+    const playerId = await selectBestAvailablePlayerId(tx, {
+      draftId: draft.id,
+      scoringFormat: league.scoringFormat,
+    });
     if (!playerId) {
       throw new AutopickExhaustedError(
-        `No undrafted Player available for draft ${draft.id} (league ${leagueId}) — seeded ` +
-          `Player pool is smaller than teamCount * rosterSize.`,
+        `No undrafted rostered Player available for draft ${draft.id} (league ${leagueId}) — ` +
+          `seeded rostered Player pool is smaller than teamCount * rosterSize.`,
       );
     }
 

@@ -691,6 +691,29 @@ Last updated: September 2026
   - repo-wide audit repeated for `currentUserId`, `currentUser`, `Pick.userId`/`pick.userId`, literal `"currentUserId"`, `leagueId_userId`, `$queryRaw`, `$executeRaw`: the Draft row-lock raw SQL correctly reads `"currentMemberId"`; every remaining `userId`-keyed lookup is intentional human-authentication logic (join, commissioner authorization, `submitPick`'s requester resolution), not a missed rename
   - `apps/web/next-env.d.ts` confirmed clean; `apps/web/tsconfig.tsbuildinfo`'s only diff was regenerated TypeScript build-cache output and was restored; the regenerated Prisma client under `packages/database/src/generated/prisma/` remains intentionally tracked, per this repository's existing convention
   - no source or test file was changed during this verification pass — it was disposable-database SQL work and read-only inspection only, so no regression suite was rerun
+- Phase 5 Milestone 5.2 — Basic Best-Available Bot Strategy:
+  - extracted the shared, deterministic BEST_AVAILABLE player-ranking primitive: `selectBestAvailablePlayerId(tx: Prisma.TransactionClient, { draftId, scoringFormat }): Promise<string | null>` in new `packages/database/src/drafts/player-selection.ts`, exported through `@fdm/database`'s public entry point
+  - this is decision logic only — no bot turn detection, scheduler, execution path, socket change, or mock-draft UI was introduced; see "Scope" note in this milestone's own final bullet below
+  - previously this ranking logic was a private, unexported function (`selectAutopickPlayerId`) living directly inside `autopick.ts`, reachable only by `processExpiredDraftTurn`; it is now a standalone, package-public function so a future Phase 5.3 bot orchestrator can call the identical primitive human timer-autopick already uses, without duplicating it
+  - `processExpiredDraftTurn` was refactored to call the extracted `selectBestAvailablePlayerId` in place of its old private helper; its own lock → re-validate → select → `applyPick` → commit sequence is otherwise unchanged
+  - the selector is read-only: it never writes a Pick, never touches `Draft`, and owns no part of the transactional correctness boundary itself — callers remain responsible for running it inside their own already-locked transaction (see "Turn-expiration and autopick conventions")
+  - **intentional correction — unified automated-selection eligibility pool:** automated selection (both tiers) is now scoped to `Player.nflTeam IS NOT NULL` (rostered players only), matching the Phase 4.3 Available Players UI pool (`getAvailablePlayers`). Before this milestone, automated selection had no such restriction and could in principle select a teamless/provider-only player a human could never see or choose in the drafting UI — a pre-existing inconsistency between the UI pool and the autopick pool, now removed. There is exactly one rostered-eligibility definition, not two independently-maintained ones.
+  - **intentional correction — deterministic ADP-tier tiebreak:** tier 1 (`PlayerAdp.adp ASC` for the league's scoring format) previously had no secondary sort at all, so an exact ADP tie between two undrafted candidates had no documented deterministic winner. It now sorts `adp ASC, player.searchRank ASC NULLS LAST, player.id ASC`, mirroring tier 2's existing tiebreak pattern.
+  - fallback tier (only reached when no eligible rostered candidate has a non-null ADP for the requested format) is unchanged in shape: `searchRank ASC NULLS LAST, id ASC`
+  - drafted-player exclusion remains scoped to the supplied `draftId` only — a Player drafted only in a different Draft remains eligible; draft pools stay per-Draft, not global
+  - the selector never throws for "no eligible player" — it returns `null`; `processExpiredDraftTurn` remains the sole place that converts `null` into `AutopickExhaustedError` for the human-autopick case. No bot-specific exhaustion behavior was designed in 5.2; Phase 5.3 owns defining what a BOT turn does with a `null` result
+  - no `BotDraftStrategy` enum, strategy-dispatch layer, or additional DTO was introduced — "BEST_AVAILABLE" is this one function's documented behavior, not a selectable/configurable value, until a second, genuinely different policy exists (5.5+)
+  - documented (not yet enforced by code, since no caller exists yet) the required transaction shape for Phase 5.3: a future bot orchestrator must lock the Draft row, verify the current participant is a BOT, then call `selectBestAvailablePlayerId` and `applyPick` inside that same transaction — a player id selected outside a locked transaction must never later be fed into `applyPick` without re-selecting under the real lock
+  - Scope: no bot turn detection, bot scheduler/orchestrator, automatic BOT picks, socket/broadcast changes, mock-draft UI, fill-empty-slots UI, strategy configuration, position-aware strategy, randomness/difficulty, temporary human-CPU takeover, `PickSource`, Phase 5.1 participant-model changes, or Auth.js/SocketTicket changes were introduced
+- Milestone 5.2 verification:
+  - `packages/database`: 103/103 tests passing (75 base + 28 new/changed) — new `player-selection.test.ts` covers rostered eligibility, teamless-player exclusion, same-draft vs. cross-draft drafted-player exclusion, lowest-ADP selection, scoring-format sensitivity, non-null-ADP-over-no-ADP, deterministic ADP-tier tiebreaks (searchRank, null-searchRank, id), fallback-tier ordering and tiebreaks (including all-null searchRank), no-eligible-player → `null`, and repeated-call determinism; `autopick.test.ts`'s "player selection" describe block was trimmed to wiring/regression coverage only (drafted-player exclusion and `AutopickExhaustedError` end-to-end through the extracted selector), avoiding duplicate ranking-permutation coverage across two files
+  - `apps/web`: 317/317 tests passing (unaffected — no web source/test changes)
+  - `apps/socket-server`: 30/30 tests passing (unaffected — no socket-server source/test changes)
+  - workspace-wide typecheck passes
+  - workspace-wide build passes with the required development environment variables loaded and Docker Postgres/Redis running
+  - no schema change occurred and no Prisma client regeneration was required
+  - `apps/web/tsconfig.tsbuildinfo` and `apps/web/next-env.d.ts` were regenerated by typecheck/build and restored via `git checkout --`, per the established repository convention from Milestone 5.1's verification pass
+  - no bot turn detection, BOT participant lookup, scheduler, execution path, socket/broadcast change, mock-draft UI, or any Phase 5.1 schema/Auth.js/SocketTicket change was introduced
 
 ### Current phase
 
@@ -703,16 +726,17 @@ Completed:
 - Phase 3 — Realtime Draft Engine — COMPLETE (Milestones 3.1, 3.2, 3.3a, 3.3b, 3.4; see "Milestone 3.5 status" below for why there is no separate 3.5)
 - Phase 4 — Client Experience — COMPLETE (Milestones 4.1–4.6)
 - Phase 5 Milestone 5.1 — Bot Membership / Participant Data Model — COMPLETE
+- Phase 5 Milestone 5.2 — Basic Best-Available Bot Strategy — COMPLETE
 
 Current Phase 5 status:
 - 5.1 — Bot Membership / Participant Data Model — **COMPLETE**
-- 5.2 — Basic Best-Available Bot Strategy — **NEXT**
-- 5.3 — Server-Side Bot Turn Orchestration — not started
+- 5.2 — Basic Best-Available Bot Strategy — **COMPLETE**
+- 5.3 — Server-Side Bot Turn Orchestration — **NEXT**
 - 5.4 — Mock Draft Creation / Fill Empty Slots with Bots — not started
 - 5.5 — Position-Aware Bot Strategy — not started
 - 5.6 — Bot Strategy Variants + Phase 5 Closeout — not started
 
-**Phase 5 is not complete.** Only the data-model foundation (5.1) has shipped; no bot behavior, orchestration, or UI exists yet — see Milestone 5.1's own completed-work notes above for the exact boundary of what shipped.
+**Phase 5 is not complete.** Only the data-model foundation (5.1) and the BEST_AVAILABLE decision logic (5.2) have shipped; no bot turn orchestration, scheduling, automatic bot picks, or mock-draft UI exists yet — see Milestone 5.1's and 5.2's own completed-work notes above for the exact boundary of what shipped.
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -762,16 +786,18 @@ Current Phase 4 capabilities:
 - a successful `draft:pick` ack now triggers an immediate `draft:join` resync rather than only waiting on the room-wide broadcast, substantially narrowing the previously-documented ack-success/broadcast-loss stuck-pending edge with no protocol change
 - a `COMPLETE` Draft hides the Available Players Action column entirely (reusing the panel's existing read-only mode) instead of showing disabled Draft buttons
 
-Current Phase 5 capabilities (Milestone 5.1 only):
+Current Phase 5 capabilities (Milestones 5.1–5.2):
 - `LeagueMember` rows may be `HUMAN` (a real `User`) or `BOT` (no `User`/OAuth identity at all), enforced by a database `CHECK` constraint
 - a bot's participant identity is its own `LeagueMember.id`; there is no fake Auth.js identity anywhere for a bot
 - multiple bots may coexist in one league (`userId = null` rows don't collide under `@@unique([leagueId, userId])`)
 - `Draft.currentMemberId` and `Pick.leagueMemberId` identify the current picker / a pick's author by participant identity, not user identity, so a HUMAN or a BOT can equally be on the clock or own a pick
 - `startDraft` and `submitPick`'s human-facing behavior are otherwise unchanged; a BOT LeagueMember row fills a draft slot exactly like a HUMAN one for fullness purposes
 - member-facing DTOs expose a normalized `participantType`/`userId`/`name`/`image` shape so existing UI (Draft Board, Team Roster, member ordering) can render a mixed HUMAN/BOT league without per-component branching
-- no bot ever picks, is scheduled, or appears in any product-facing creation flow yet — see Milestone 5.1's own notes for the full boundary, and "Known issue — League deletion blocked by Pick → LeagueMember FK ordering" below for a verified, still-open limitation this milestone surfaced
+- a deterministic BEST_AVAILABLE player-selection primitive (`selectBestAvailablePlayerId`) exists in `@fdm/database`, shared by human timer-autopick today and intended for Phase 5.3's bot orchestrator — but no bot ever picks, is scheduled, or appears in any product-facing creation flow yet
+- automated selection (both human timer-autopick and the future bot policy) is now rostered-player-only, matching the human Available Players UI pool — see Milestone 5.2's notes for the eligibility-unification rationale
+- see Milestone 5.1's and 5.2's own notes for the full boundary of what shipped, and "Known issue — League deletion blocked by Pick → LeagueMember FK ordering" below for a verified, still-open limitation Milestone 5.1 surfaced
 
-**Phase 4 exit criteria satisfied.** All six milestones (4.1–4.6) are complete, and Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect. Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) remain complete and frozen as well. Horizontal scalability (Redis pub/sub across multiple socket-server instances), rate limiting, structured error responses, Playwright E2E coverage, and CI remain explicitly deferred to Phase 5's own closeout (5.6) and beyond; Phase 5 itself has now begun (Milestone 5.1 complete, 5.2 next).
+**Phase 4 exit criteria satisfied.** All six milestones (4.1–4.6) are complete, and Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect. Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) remain complete and frozen as well. Horizontal scalability (Redis pub/sub across multiple socket-server instances), rate limiting, structured error responses, Playwright E2E coverage, and CI remain explicitly deferred to Phase 5's own closeout (5.6) and beyond; Phase 5 itself is underway (Milestones 5.1–5.2 complete, 5.3 next).
 
 ### Not yet implemented
 
@@ -787,7 +813,7 @@ Current Phase 5 capabilities (Milestone 5.1 only):
 - roster-position enforcement, including roster-aware autopick selection, if later required
 - ML recommendation system
 - GitHub Actions CI
-- bot player selection, bot turn scheduler, automatic bot picks (Phase 5.1 built the data model only — see "Current implementation status")
+- bot turn detection, bot turn scheduler, automatic bot picks (Phase 5.1 built the data model, Phase 5.2 built deterministic BEST_AVAILABLE player-selection decision logic; no bot turn is ever detected, scheduled, or executed yet — see "Current implementation status")
 - mock-draft creation UI, fill-empty-slots UI
 - `Pick` "source" concept (`PickSource`) distinguishing MANUAL/AUTOPICK/BOT — deferred; see "Settled decisions"
 - bot strategy/difficulty/seed configuration fields
@@ -806,7 +832,7 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
 - bot picks would run server-side (most likely from `apps/socket-server`, alongside the existing turn-expiration sweep), never as browser-side automation. **Not yet built** — this is Phase 5.3's job; 5.1 only made the data model capable of representing a bot on the clock.
 - a bot's turn would reuse the same authoritative transactional pick pipeline (`submitPick`/`applyPick`) every other pick source already uses — no second pick-writing path. **Still the plan**: `applyPick` already takes a `leagueMemberId`, not a `userId`, so a future bot caller needs no new write path.
 - a bot-manager pick is intentionally distinct from a human's timer-expiry autopick, even though both are machine-selected; a future `Pick` "source" concept might eventually distinguish `MANUAL`, `AUTOPICK` (timer expiry), and `BOT` (an intentional non-human manager) rather than overloading the existing `wasAutopick` boolean for both. **Deliberately not done in 5.1**: `Pick.leagueMemberId` joined against `LeagueMember.participantType` already lets a caller derive MANUAL/AUTOPICK(human)/BOT with zero new columns, so `PickSource` remains deferred until that derivation is shown to be insufficient.
-- a first bot implementation would likely be a simple ADP/best-available selector, reusing `selectAutopickPlayerId`'s existing two-tier approach; roster/position-aware bot strategy would be later, optional work. **Still the plan** — this is Phase 5.2.
+- a first bot implementation would likely be a simple ADP/best-available selector, reusing the existing two-tier autopick approach; roster/position-aware bot strategy would be later, optional work. **Done (decision logic only) in Phase 5.2**: the two-tier ranking primitive was extracted from `autopick.ts` into the shared, exported `selectBestAvailablePlayerId`, with a rostered-eligibility correction applied along the way — see Milestone 5.2's completed-work notes. No bot turn actually calls it yet; that's Phase 5.3.
 - a mock-draft mode could fill empty League slots with bots; a separately-discussed idea — temporarily delegating an existing real human's slot to CPU control — is a distinct, later concern from bot-owned mock-draft slots and should not be conflated with it. **Still the plan** — mock-draft slot-filling is Phase 5.4; temporary human-to-CPU delegation remains unscoped and explicitly out of 5.1's data model.
 
 ### Deferred decisions
@@ -984,8 +1010,9 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
 - the sweep interval currently defaults to 2000ms and is configurable per call for tests; it is not an environment variable
 - manual pick submission and automatic turn expiration serialize on the identical Draft-row lock; neither can consume a turn the other has already consumed
 - a sweep pass that finds a turn already advanced (by a manual pick or another sweep pass) is a routine no-op, not an error
-- autopick selection order is: lowest available ADP for the League's scoring format, then lowest `searchRank` (nulls last), then `id` ascending as a final deterministic tiebreak
+- autopick selection order is: lowest available ADP for the League's scoring format, then lowest `searchRank` (nulls last), then `id` ascending as a final deterministic tiebreak — as of Phase 5.2 this ranking rule lives in the shared, exported `selectBestAvailablePlayerId` (`packages/database/src/drafts/player-selection.ts`), not private to autopick; see "Turn-expiration and autopick conventions"
 - autopick does not yet consider roster position
+- as of Phase 5.2, automated selection (`selectBestAvailablePlayerId`) is scoped to rostered players only (`Player.nflTeam IS NOT NULL`), matching the Phase 4.3 Available Players UI pool — before 5.2, human timer-autopick's candidate pool had no such restriction and could theoretically select a player invisible to the drafting UI; this was an intentional correction, not a new restriction on human manual picks (`submitPick`/`applyPick` remain pool-agnostic)
 - Socket.IO broadcasts authoritative state only after a real (non-no-op) turn-consuming mutation, manual or automatic
 - restart recovery for timer/autopick state comes from rediscovering expired deadlines in Postgres on the next sweep tick, not from reconstructing in-memory timers
 - the basic reconnect/resync mechanism (fresh SocketTicket, reconnect, `draft:join`, authoritative resync) was delivered in 3.3b and required no changes for 3.4; it already reflects any autopick-driven state that occurred while a client was disconnected
@@ -1229,7 +1256,8 @@ The current monorepo boundary is:
   - authoritative draft mutation/query services such as `submitPick`, `getDraftState`, `getDraftStateForLeague`, `processExpiredDraftTurn`, and `findExpiredActiveDraftLeagueIds`
   - socket-ticket persistence services
   - test-only database helpers exposed separately through `@fdm/database/test-support`
-  - `lockDraftForLeague`, `applyPick`, and `selectAutopickPlayerId` are internal implementation details shared between `submitPick` and `processExpiredDraftTurn`, not part of the package's public surface
+  - `lockDraftForLeague` and `applyPick` are internal implementation details shared between `submitPick` and `processExpiredDraftTurn`, not part of the package's public surface
+  - `selectBestAvailablePlayerId` (Phase 5.2, `packages/database/src/drafts/player-selection.ts`) is the shared BEST_AVAILABLE player-ranking primitive used by `processExpiredDraftTurn` today and intended for a future Phase 5.3 bot orchestrator; unlike `lockDraftForLeague`/`applyPick` it *is* part of the package's public surface, since it is read-only and cannot mutate draft state by itself
 
 - `apps/web`
   - Next.js HTTP/Auth/UI adapter
@@ -1524,21 +1552,28 @@ Each tick:
 1. `findExpiredActiveDraftLeagueIds()` — a plain, unlocked Postgres read for `Draft.status = ACTIVE AND turnDeadline <= now`
 2. for each candidate League, `processExpiredDraftTurn(leagueId)` locks the Draft row (`lockDraftForLeague`, the same lock `submitPick` uses) and re-validates expiry *inside* the lock
 3. a candidate that went stale between discovery and lock acquisition (already picked, no longer `ACTIVE`, deadline no longer past) returns a `"skipped"` outcome — a routine no-op, not an error
-4. a genuinely expired turn selects the next Pick via `selectAutopickPlayerId` and applies it through the same internal `applyPick(...)` used by `submitPick`, with `wasAutopick: true`
+4. a genuinely expired turn selects the next Pick via `selectBestAvailablePlayerId` (Phase 5.2 — see below) and applies it through the same internal `applyPick(...)` used by `submitPick`, with `wasAutopick: true`
 5. only a `"picked"` outcome triggers `broadcastDraftState(...)` — one authoritative `draft:state` snapshot to `league:${leagueId}`
 
 Because manual picks and autopicks lock and re-validate against the identical Draft row, a manual-pick-vs-autopick race and a duplicate-sweep-vs-sweep race both resolve to exactly one turn consumer — the same guarantee Milestone 3.2 established for concurrent manual submissions.
 
-Autopick player selection (`selectAutopickPlayerId`), scoped to Players not yet drafted in the Draft:
-- tier 1: lowest `PlayerAdp.adp` for the League's `scoringFormat`
-- tier 2 (fallback when no undrafted Player has an ADP row for that format): lowest `Player.searchRank`, nulls last, `id asc` as a final deterministic tiebreak
+**Player selection (`selectBestAvailablePlayerId`, extracted in Phase 5.2):** lives in `packages/database/src/drafts/player-selection.ts`, exported through `@fdm/database`'s public entry point. Signature: `selectBestAvailablePlayerId(tx: Prisma.TransactionClient, { draftId, scoringFormat }): Promise<string | null>`. It is read-only — it never writes a Pick, never touches `Draft`, and owns no part of the transactional correctness boundary itself; it is a single ranking query a caller runs inside its own already-locked transaction. Before Phase 5.2 this logic was a private, unexported function (`selectAutopickPlayerId`) living directly inside `autopick.ts`; it was extracted with the same two-tier ranking approach so that a future BEST_AVAILABLE bot policy (5.3+) can call the identical primitive human timer-autopick already uses, rather than duplicating it. No `BotDraftStrategy` enum or strategy-dispatch layer exists — "BEST_AVAILABLE" is this one function's behavior, not a selectable value, until a second, genuinely different policy exists (5.5+).
+
+Scoped to Players not yet drafted in the supplied `draftId` (a Player drafted only in a *different* Draft remains eligible — draft pools are per-Draft, not global) and, as of Phase 5.2, further scoped to `Player.nflTeam IS NOT NULL` (rostered players only):
+- tier 1: lowest `PlayerAdp.adp` for the League's `scoringFormat`, tiebroken by `player.searchRank ASC NULLS LAST`, then `player.id ASC`
+- tier 2 (fallback when no undrafted rostered Player has an ADP row for that format): lowest `Player.searchRank`, nulls last, `id asc` as a final deterministic tiebreak
 - no roster-position awareness yet
+- returns `null` when no eligible undrafted rostered Player exists in either tier; the selector itself never throws — `processExpiredDraftTurn` is the one that converts a `null` result into `AutopickExhaustedError` for the human-autopick case (see below)
 - as of Phase 5.1: `processExpiredDraftTurn` reads/writes `Draft.currentMemberId`/`Pick.leagueMemberId` (participant identity) rather than a User id, but does **not** inspect `currentMember.participantType` anywhere — a BOT's expired turn would be autopicked exactly like a human's, with no guard. Currently unreachable in production (no path creates a BOT `LeagueMember` outside test fixtures — see Milestone 5.1's notes), but Phase 5.3 must explicitly resolve bot-turn orchestration vs. this sweep before bot creation becomes product-accessible, or the two could race/double-handle a bot's turn.
-- an exhausted pool (no undrafted Player at all) throws `AutopickExhaustedError` — an internal data/configuration invariant failure (the seeded Player pool is smaller than `teamCount * rosterSize`), not a normal skip; it is logged and left for a later sweep tick rather than crashing the sweep for other leagues. This is expected to remain retryable-but-failing until the underlying seed/roster-size mismatch is corrected — it is not something later sweeps are expected to resolve on their own.
+- an exhausted pool (no undrafted rostered Player at all) throws `AutopickExhaustedError` — an internal data/configuration invariant failure (the seeded rostered Player pool is smaller than `teamCount * rosterSize`), not a normal skip; it is logged and left for a later sweep tick rather than crashing the sweep for other leagues. This is expected to remain retryable-but-failing until the underlying seed/roster-size mismatch is corrected — it is not something later sweeps are expected to resolve on their own. Because eligibility narrowed to rostered players in 5.2, this can now trip in a league whose seeded rostered pool is smaller than `teamCount * rosterSize`, even if the old all-Player pool would have been large enough — an intentional consequence of the eligibility correction, not a regression.
+
+**Phase 5.2 correction — unified automated-selection eligibility pool:** before this milestone, automated selection (then private `selectAutopickPlayerId`) considered every `Player` row with no `nflTeam` restriction, while the Phase 4.3 Available Players UI (`getAvailablePlayers`) was already rostered-only. This meant human timer-autopick could theoretically select a teamless/provider-only player a human could never see or choose in the drafting UI. `selectBestAvailablePlayerId` now applies the same `Player.nflTeam IS NOT NULL` eligibility rule the UI already used, in both tiers — there is exactly one rostered-eligibility definition, shared by manual UI discovery, human timer-autopick, and (once built) BEST_AVAILABLE bot selection, not three independently-maintained ones.
+
+**Phase 5.2 correction — deterministic ADP-tier tiebreak:** tier 1's `orderBy` previously had no secondary sort at all (`adp ASC` only), so an exact ADP tie between two undrafted candidates had no documented deterministic winner. It now sorts `adp ASC, searchRank ASC NULLS LAST, id ASC`, matching tier 2's existing tiebreak pattern. This is the one narrow, previously-untested behavior change to human autopick from the 5.2 extraction; every other ranking case (best ADP wins, searchRank fallback, drafted-player exclusion, exhaustion) is unchanged.
 
 Restart recovery is a byproduct of polling live Postgres state rather than a separate feature: a freshly started socket-server process discovers exactly the same expired/future deadlines a long-running process would, with no in-memory timer state to reconstruct.
 
-Public correctness services: `submitPick` (manual) and `processExpiredDraftTurn` (automatic). `lockDraftForLeague`, `applyPick`, and `selectAutopickPlayerId` are internal `@fdm/database` implementation details, not part of the public surface.
+Public correctness services: `submitPick` (manual) and `processExpiredDraftTurn` (automatic). `lockDraftForLeague` and `applyPick` are internal `@fdm/database` implementation details, not part of the public surface. `selectBestAvailablePlayerId` (Phase 5.2) is the one exception to that internal-only pattern: it is read-only and can't corrupt draft state by itself, so it is exported publicly specifically so a future Phase 5.3 bot orchestrator (running in `apps/socket-server`, which can only reach `@fdm/database` through its public entry point) can call it without a second package-boundary change. **Required future-caller rule (5.3):** a bot turn orchestrator must (1) acquire the authoritative Draft-row lock, (2) verify the current participant is a BOT, (3) call `selectBestAvailablePlayerId` inside that same transaction, and (4) call `applyPick` inside that same transaction — mirroring the existing `processExpiredDraftTurn` sequence exactly. A player id selected outside a locked transaction must never be fed into `applyPick` later without re-selecting under the real lock first; the draft's undrafted-player set can change between an unlocked read and a later locked write.
 
 #### Pick submission status conventions
 
@@ -2033,19 +2068,19 @@ Milestones:
 
 Milestones:
 - **5.1 Bot Membership / Participant Data Model — COMPLETE**
-- **5.2 Basic Best-Available Bot Strategy — NEXT**
-- **5.3 Server-Side Bot Turn Orchestration**
+- **5.2 Basic Best-Available Bot Strategy — COMPLETE**
+- **5.3 Server-Side Bot Turn Orchestration — NEXT**
 - **5.4 Mock Draft Creation / Fill Empty Slots with Bots**
 - **5.5 Position-Aware Bot Strategy**
 - **5.6 Bot Strategy Variants + Phase 5 Closeout**
 
-Milestone 5.1 delivered the unified HUMAN/BOT `LeagueMember` participant model, the `User.id`-vs-`LeagueMember.id` identity split, the `Draft.currentUserId`→`currentMemberId` and `Pick.userId`→`Pick.leagueMemberId` migration, and normalized HUMAN/BOT member DTOs — see "Current implementation status" and "Settled decisions" for the full detail. No bot player selection, turn scheduling, automatic bot picks, or mock-draft UI exists yet.
+Milestone 5.1 delivered the unified HUMAN/BOT `LeagueMember` participant model, the `User.id`-vs-`LeagueMember.id` identity split, the `Draft.currentUserId`→`currentMemberId` and `Pick.userId`→`Pick.leagueMemberId` migration, and normalized HUMAN/BOT member DTOs. Milestone 5.2 extracted the deterministic BEST_AVAILABLE player-selection primitive (`selectBestAvailablePlayerId`, `packages/database/src/drafts/player-selection.ts`) out of the previously-private autopick selector, correcting it to use the same rostered-player eligibility pool as the human Available Players UI and to break exact-ADP ties deterministically, and wired human timer-expiry autopick (`processExpiredDraftTurn`) to call it. See "Current implementation status" and "Settled decisions" for the full detail. No bot turn detection, scheduling, automatic bot picks, or mock-draft UI exists yet — 5.2 was decision logic only.
 
-**Milestone 5.3 note:** server-side bot turn orchestration must be explicitly coordinated with the existing `apps/socket-server` timer-expiry autopick sweep (`processExpiredDraftTurn`) before bot creation becomes product-accessible, so the two mechanisms cannot race or double-handle the same bot's turn. Milestone 5.1 confirmed the sweep has no `participantType` awareness today (see "Turn-expiration and autopick conventions" and "Not yet implemented") — this is a real, currently-dormant gap that 5.3 must resolve as part of its own design, not something already handled or safe to defer again.
+**Milestone 5.3 note:** server-side bot turn orchestration must be explicitly coordinated with the existing `apps/socket-server` timer-expiry autopick sweep (`processExpiredDraftTurn`) before bot creation becomes product-accessible, so the two mechanisms cannot race or double-handle the same bot's turn. Milestone 5.1 confirmed the sweep has no `participantType` awareness today (see "Turn-expiration and autopick conventions" and "Not yet implemented") — this is a real, currently-dormant gap that 5.3 must resolve as part of its own design, not something already handled or safe to defer again. Milestone 5.2 additionally documented (but did not implement or enforce in code, since no caller exists yet) the required transaction shape for 5.3's bot orchestrator: lock the Draft row → verify the current participant is a BOT → call `selectBestAvailablePlayerId` → call `applyPick`, all inside that same transaction — a player id selected outside a locked transaction must never later be fed into `applyPick` without re-selecting under the real lock. 5.3 also owns defining what a BOT turn does when `selectBestAvailablePlayerId` returns `null` (bot exhaustion semantics were explicitly not designed in 5.2).
 
 *Done when: 5.1–5.6 are complete — a mock draft can be created, filled with bots, and drafted to completion with the same server-authoritative correctness guarantees as an all-human draft.*
 
-Phase 5 is not complete; only Milestone 5.1 has shipped.
+Phase 5 is not complete; only Milestones 5.1–5.2 have shipped.
 
 **Phase 6 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.
 *Done when: CI is green and two socket instances run safely against one Redis.*

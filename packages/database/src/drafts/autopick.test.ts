@@ -82,12 +82,17 @@ async function startFullDraft(overrides: LeagueOverrides = {}) {
   return { league, owner, membersBySlot, membershipsBySlot, userIdByMembershipId, draft };
 }
 
+// Defaults to a rostered player (nflTeam set) since that's the eligible
+// shape selectBestAvailablePlayerId requires as of Phase 5.2 — these
+// higher-level autopick tests exist to prove the wiring into that selector
+// still works end to end, not to re-cover its ranking rules (see
+// player-selection.test.ts for exhaustive ranking/eligibility coverage).
 async function createPlayerWithAdp(
   format: ScoringFormat,
   adp: number,
-  overrides: Partial<{ fullName: string; position: string }> = {},
+  overrides: Partial<{ fullName: string; position: string; nflTeam: string | null }> = {},
 ) {
-  const player = await createTestPlayer(overrides);
+  const player = await createTestPlayer({ nflTeam: "KC", ...overrides });
   await prisma.playerAdp.create({ data: { playerId: player.id, format, adp, source: "test" } });
   return player;
 }
@@ -292,20 +297,14 @@ describe("processExpiredDraftTurn", () => {
     });
   });
 
-  describe("player selection", () => {
-    it("selects the lowest-ADP undrafted player for the league's scoring format", async () => {
-      const { league } = await startFullDraft({ teamCount: 4, scoringFormat: "PPR" });
-      const worse = await createPlayerWithAdp("PPR", 50, { fullName: "Worse ADP" });
-      const better = await createPlayerWithAdp("PPR", 5, { fullName: "Better ADP" });
-
-      const outcome = await processExpiredDraftTurn(league.id);
-
-      expect(outcome.outcome).toBe("picked");
-      if (outcome.outcome !== "picked") throw new Error("unreachable");
-      expect(outcome.result.pick.playerId).toBe(better.id);
-      expect(outcome.result.pick.playerId).not.toBe(worse.id);
-    });
-
+  // Ranking-rule coverage (best ADP wins, scoring-format sensitivity,
+  // searchRank fallback, tiebreaks, rostered-only eligibility) lives in
+  // player-selection.test.ts, against the extracted selectBestAvailablePlayerId
+  // directly. What remains here proves the higher-level wiring: that
+  // processExpiredDraftTurn actually calls the shared selector, applies its
+  // result, still excludes drafted players end to end, and still surfaces
+  // exhaustion as AutopickExhaustedError.
+  describe("player selection (wiring)", () => {
     it("never selects a player already drafted in this draft", async () => {
       const { league, owner, draft } = await startFullDraft({ teamCount: 4 });
       const alreadyDrafted = await createPlayerWithAdp(league.scoringFormat, 1, {
@@ -325,32 +324,6 @@ describe("processExpiredDraftTurn", () => {
       expect(outcome.outcome).toBe("picked");
       if (outcome.outcome !== "picked") throw new Error("unreachable");
       expect(outcome.result.pick.playerId).toBe(nextBest.id);
-    });
-
-    it("falls back to lowest searchRank when no undrafted player has an ADP row for this format", async () => {
-      const { league } = await startFullDraft({ teamCount: 4, scoringFormat: "PPR" });
-      const worseRank = await createTestPlayer({ fullName: "Worse Rank", searchRank: 200 });
-      const betterRank = await createTestPlayer({ fullName: "Better Rank", searchRank: 10 });
-
-      const outcome = await processExpiredDraftTurn(league.id);
-
-      expect(outcome.outcome).toBe("picked");
-      if (outcome.outcome !== "picked") throw new Error("unreachable");
-      expect(outcome.result.pick.playerId).toBe(betterRank.id);
-      expect(outcome.result.pick.playerId).not.toBe(worseRank.id);
-    });
-
-    it("prefers ADP over searchRank when both are available", async () => {
-      const { league } = await startFullDraft({ teamCount: 4, scoringFormat: "PPR" });
-      const hasAdp = await createPlayerWithAdp("PPR", 100, { fullName: "Has ADP" });
-      const noAdpButGoodRank = await createTestPlayer({ fullName: "No ADP", searchRank: 1 });
-
-      const outcome = await processExpiredDraftTurn(league.id);
-
-      expect(outcome.outcome).toBe("picked");
-      if (outcome.outcome !== "picked") throw new Error("unreachable");
-      expect(outcome.result.pick.playerId).toBe(hasAdp.id);
-      expect(outcome.result.pick.playerId).not.toBe(noAdpButGoodRank.id);
     });
 
     it("throws AutopickExhaustedError when no undrafted player exists", async () => {
