@@ -6,6 +6,8 @@ import { getLeagueDetail } from "../../../../lib/leagues/get-league-detail";
 import { getAvailablePlayers } from "../../../../lib/players/get-available-players";
 import { AvailablePlayersPanel } from "./AvailablePlayersPanel";
 import { DraftBoard } from "./DraftBoard";
+import { FillBotsForm } from "./fill-bots-form";
+import { RemoveBotsForm } from "./remove-bots-form";
 import { StartDraftForm } from "./start-draft-form";
 
 // Milestone 4.5: the stable "about this draft" page. It never opens a
@@ -108,6 +110,8 @@ export default async function DraftPage({
   };
 
   const isFull = members.length === league.teamCount;
+  const botCount = members.filter((member) => member.participantType === "BOT").length;
+  const openSlotCount = league.teamCount - members.length;
 
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 16, fontFamily: "sans-serif" }}>
@@ -127,6 +131,7 @@ export default async function DraftPage({
         {members.map((member) => (
           <li key={member.membershipId}>
             {member.name}
+            {member.participantType === "BOT" ? " (BOT)" : ""}
             {member.userId === currentUserId ? " (you)" : ""}
             {member.userId === league.ownerId ? " (commissioner)" : ""}
           </li>
@@ -134,12 +139,39 @@ export default async function DraftPage({
       </ol>
 
       {isCommissioner ? (
-        <StartDraftForm
-          leagueId={league.id}
-          isFull={isFull}
-          membersCount={members.length}
-          teamCount={league.teamCount}
-        />
+        <>
+          {botCount > 0 && (
+            <p style={{ margin: "4px 0", color: "#57606a" }}>
+              {members.length}/{league.teamCount} managers joined — {botCount} CPU manager
+              {botCount === 1 ? "" : "s"}
+            </p>
+          )}
+          {/* Phase 5.4: the first production control that can create a BOT
+              LeagueMember. Only shown while the league isn't full yet — once
+              full, StartDraftForm's own enabled button takes over and
+              RemoveBotsForm (below) is the only bot-management action left. */}
+          {!isFull && <FillBotsForm leagueId={league.id} openSlotCount={openSlotCount} />}
+          <StartDraftForm
+            leagueId={league.id}
+            isFull={isFull}
+            membersCount={members.length}
+            teamCount={league.teamCount}
+          />
+          {botCount > 0 && <RemoveBotsForm leagueId={league.id} />}
+          {/* Discoverability fix: the existing reorder UI (MemberOrderForm)
+              lives on the league-detail page, not here — this page never
+              duplicates it. This link is the whole fix: it makes the
+              already-working Fill Bots -> reorder -> Start Draft flow
+              (verified end to end at the service layer) reachable without
+              the commissioner having to already know that page exists. Only
+              rendered here, in the commissioner branch of the no-Draft-yet
+              body — never in the ACTIVE/COMPLETE summary branch above,
+              which returns before this code is reached, and never for a
+              non-commissioner, since that's the sibling branch below. */}
+          <p style={{ margin: "4px 0" }}>
+            <Link href={`/leagues/${league.id}`}>Manage draft order</Link>
+          </p>
+        </>
       ) : (
         <p>
           The commissioner hasn't started the draft yet — {members.length}/{league.teamCount}{" "}

@@ -92,4 +92,12 @@ describe("deriveTeamRosters", () => {
     expect(rosters).toHaveLength(3);
     expect(rosters.find((r) => r.membershipId === "m3")?.picks).toEqual([]);
   });
+
+  // Phase 5.4: participantType is carried through so TeamRosterPanel can
+  // render a "(BOT)" marker without re-deriving anything itself.
+  it("carries participantType through for both HUMAN and BOT members", () => {
+    const rosters = deriveTeamRosters(state([]));
+    expect(rosters.find((r) => r.membershipId === "m1")?.participantType).toBe("HUMAN");
+    expect(rosters.find((r) => r.membershipId === "m3")?.participantType).toBe("BOT");
+  });
 });

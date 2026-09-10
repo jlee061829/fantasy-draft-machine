@@ -79,6 +79,7 @@ export function DraftBoard({ state, currentUserId }: DraftBoardProps) {
                   {member ? (
                     <>
                       {member.name}
+                      {member.participantType === "BOT" ? " (BOT)" : ""}
                       {member.userId === currentUserId ? " (you)" : ""}
                     </>
                   ) : (

@@ -64,12 +64,16 @@ export function TeamRosterPanel({ state, currentUserId }: TeamRosterPanelProps) 
         onChange={(event) => setSelectedMembershipId(event.target.value)}
         style={{ marginBottom: 12 }}
       >
-        {rosters.map((roster) => (
-          <option key={roster.membershipId} value={roster.membershipId}>
-            {roster.membershipId === viewerMembershipId ? `${roster.name} (you)` : roster.name} — Slot{" "}
-            {roster.draftSlot}
-          </option>
-        ))}
+        {rosters.map((roster) => {
+          const label =
+            roster.membershipId === viewerMembershipId ? `${roster.name} (you)` : roster.name;
+          return (
+            <option key={roster.membershipId} value={roster.membershipId}>
+              {label}
+              {roster.participantType === "BOT" ? " (BOT)" : ""} — Slot {roster.draftSlot}
+            </option>
+          );
+        })}
       </select>
 
       {!selected || selected.picks.length === 0 ? (

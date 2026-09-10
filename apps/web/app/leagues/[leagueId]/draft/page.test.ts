@@ -3,9 +3,12 @@ import Link from "next/link";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanupLeagueTestData, createTestPlayer, createTestUser } from "@fdm/database/test-support";
 import { createLeague } from "../../../../lib/leagues/create-league";
+import { fillOpenLeagueSlotsWithBots } from "../../../../lib/leagues/fill-bots";
 import { startDraft } from "../../../../lib/drafts/start-draft";
 import DraftPage from "./page";
 import { StartDraftForm } from "./start-draft-form";
+import { FillBotsForm } from "./fill-bots-form";
+import { RemoveBotsForm } from "./remove-bots-form";
 import { DraftBoard } from "./DraftBoard";
 import { AvailablePlayersPanel } from "./AvailablePlayersPanel";
 
@@ -196,6 +199,97 @@ describe("DraftPage (pre-draft)", () => {
     );
     expect(links).toHaveLength(1);
     expect(links[0]!.props.children).toBe("Join Draft Room");
+    // The ACTIVE-summary branch returns before the commissioner-controls
+    // block is ever reached, so the Manage draft order link must not appear.
+    const manageLinks = findElementsByType(page, Link).filter(
+      (link) => link.props.href === `/leagues/${league.id}`,
+    );
+    expect(manageLinks).toHaveLength(0);
+  });
+
+  // Phase 5.4
+  it("renders a Fill Bots control for the commissioner with the correct open-slot count when underfilled", async () => {
+    const owner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+    const { league } = await testLeague(owner.id, 4); // owner occupies slot 1, 3 open
+
+    const page = await DraftPage({ params: paramsFor(league.id) });
+
+    const fillForms = findElementsByType(page, FillBotsForm);
+    expect(fillForms).toHaveLength(1);
+    expect(fillForms[0]!.props.openSlotCount).toBe(3);
+    expect(findElementsByType(page, RemoveBotsForm)).toHaveLength(0);
+  });
+
+  // Discoverability fix: makes the already-working Fill Bots -> reorder ->
+  // Start Draft flow reachable from this page without requiring the
+  // commissioner to already know /leagues/[leagueId] exists. This link is
+  // the only change — MemberOrderForm itself is untouched and unduplicated.
+  it("renders a Manage draft order link to the league detail page for the commissioner when no Draft exists", async () => {
+    const owner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+    const { league } = await testLeague(owner.id, 4);
+
+    const page = await DraftPage({ params: paramsFor(league.id) });
+
+    const links = findElementsByType(page, Link).filter(
+      (link) => link.props.href === `/leagues/${league.id}`,
+    );
+    expect(links).toHaveLength(1);
+    expect(links[0]!.props.children).toBe("Manage draft order");
+  });
+
+  it("does not render Fill/Remove Bots controls or the Manage draft order link for a non-commissioner member", async () => {
+    const owner = await createTestUser();
+    const joiner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: joiner.id } });
+    const { league } = await testLeague(owner.id, 4);
+    await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: joiner.id, draftSlot: 2 },
+    });
+
+    const page = await DraftPage({ params: paramsFor(league.id) });
+
+    expect(findElementsByType(page, FillBotsForm)).toHaveLength(0);
+    expect(findElementsByType(page, RemoveBotsForm)).toHaveLength(0);
+    const manageLinks = findElementsByType(page, Link).filter(
+      (link) => link.props.href === `/leagues/${league.id}`,
+    );
+    expect(manageLinks).toHaveLength(0);
+  });
+
+  it("renders a Remove Bots control (and no Fill Bots control) once bots have filled the league", async () => {
+    const owner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+    const { league } = await testLeague(owner.id, 4);
+    await fillOpenLeagueSlotsWithBots(league.id, owner.id);
+
+    const page = await DraftPage({ params: paramsFor(league.id) });
+
+    expect(findElementsByType(page, FillBotsForm)).toHaveLength(0);
+    const removeForms = findElementsByType(page, RemoveBotsForm);
+    expect(removeForms).toHaveLength(1);
+    expect(removeForms[0]!.props.leagueId).toBe(league.id);
+    const starters = findElementsByType(page, StartDraftForm);
+    expect(starters[0]!.props.isFull).toBe(true);
+  });
+
+  it("renders a (BOT) marker in the draft order list for bot members", async () => {
+    const owner = await createTestUser();
+    authMock.mockResolvedValue({ user: { id: owner.id } });
+    const { league } = await testLeague(owner.id, 4);
+    await fillOpenLeagueSlotsWithBots(league.id, owner.id);
+
+    const page = await DraftPage({ params: paramsFor(league.id) });
+
+    const items = findElementsByType(page, "li");
+    const botItemTexts = items
+      .map((item) => (Array.isArray(item.props.children) ? item.props.children : [item.props.children]))
+      .filter((children) => children.some((child: unknown) => typeof child === "string" && child.includes("CPU")));
+    expect(botItemTexts.length).toBeGreaterThan(0);
+    for (const children of botItemTexts) {
+      expect(children).toContain(" (BOT)");
+    }
   });
 
   it("renders a View Draft Room link once the Draft is COMPLETE", async () => {
@@ -224,5 +318,12 @@ describe("DraftPage (pre-draft)", () => {
     );
     expect(links).toHaveLength(1);
     expect(links[0]!.props.children).toBe("View Draft Room");
+    // The COMPLETE-summary branch also returns before the commissioner-
+    // controls block, so the Manage draft order link must not appear here
+    // either.
+    const manageLinks = findElementsByType(page, Link).filter(
+      (link) => link.props.href === `/leagues/${league.id}`,
+    );
+    expect(manageLinks).toHaveLength(0);
   });
 });
