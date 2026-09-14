@@ -437,6 +437,105 @@ describe("human/BOT strategy separation (Phase 5.5)", () => {
   });
 });
 
+// Phase 5.6: onesie hard caps, elite-QB/TE backup gating, and
+// starting-lineup feasibility are all BOT-only (selectPositionAwareBotPlayerId
+// / isCandidateOnesieEligible / wouldSelectionPreserveLineupFeasibility).
+// processExpiredDraftTurn must remain completely unaware of any of it — a
+// human who misses their deadline keeps getting exactly what
+// selectBestAvailablePlayerId (Phase 5.2, unmodified) would pick, even in
+// scenarios engineered to be maximally restrictive for a BOT.
+describe("human/BOT onesie/lineup separation (Phase 5.6)", () => {
+  beforeEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  afterEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  it("a HUMAN who already owns 2 QB (a hard BOT cap) still gets QB3 via raw BEST_AVAILABLE", async () => {
+    const { league, membershipsBySlot, draft } = await startFullDraft({ teamCount: 4 });
+    const ownerMembershipId = membershipsBySlot[1]!;
+    await prisma.pick.create({
+      data: {
+        draftId: draft.id,
+        leagueMemberId: ownerMembershipId,
+        playerId: (await createTestPlayer({ nflTeam: "KC", position: "QB" })).id,
+        pickNumber: 1,
+      },
+    });
+    await prisma.pick.create({
+      data: {
+        draftId: draft.id,
+        leagueMemberId: ownerMembershipId,
+        playerId: (await createTestPlayer({ nflTeam: "KC", position: "QB" })).id,
+        pickNumber: 2,
+      },
+    });
+    await prisma.draft.update({ where: { id: draft.id }, data: { currentPickNumber: 3 } });
+    const qb3 = await createPlayerWithAdp(league.scoringFormat, 5, { position: "QB", fullName: "QB3" });
+    const wr = await createPlayerWithAdp(league.scoringFormat, 50, { position: "WR", fullName: "WR" });
+
+    const outcome = await processExpiredDraftTurn(league.id);
+
+    expect(outcome.outcome).toBe("picked");
+    if (outcome.outcome !== "picked") throw new Error("unreachable");
+    expect(outcome.result.pick.playerId).toBe(qb3.id);
+    expect(outcome.result.pick.playerId).not.toBe(wr.id);
+  });
+
+  it("a HUMAN who already owns a K still gets a second K via raw BEST_AVAILABLE (a hard BOT cap is a BOT-only rule)", async () => {
+    const { league, membershipsBySlot, draft } = await startFullDraft({ teamCount: 4 });
+    const ownerMembershipId = membershipsBySlot[1]!;
+    await prisma.pick.create({
+      data: {
+        draftId: draft.id,
+        leagueMemberId: ownerMembershipId,
+        playerId: (await createTestPlayer({ nflTeam: "KC", position: "K" })).id,
+        pickNumber: 1,
+      },
+    });
+    await prisma.draft.update({ where: { id: draft.id }, data: { currentPickNumber: 2 } });
+    const k2 = await createPlayerWithAdp(league.scoringFormat, 5, { position: "K", fullName: "K2" });
+
+    const outcome = await processExpiredDraftTurn(league.id);
+
+    expect(outcome.outcome).toBe("picked");
+    if (outcome.outcome !== "picked") throw new Error("unreachable");
+    expect(outcome.result.pick.playerId).toBe(k2.id);
+  });
+
+  it("lineup-feasibility pressure that would force a BOT toward QB/K/DEF does not constrain a HUMAN's timeout pick", async () => {
+    const { league, membershipsBySlot, draft } = await startFullDraft({ teamCount: 4, rosterSize: 15 });
+    const ownerMembershipId = membershipsBySlot[1]!;
+    // Owner has RB/WR surplus and no QB/K/DEF at all, with few picks
+    // remaining — exactly the shape that would force a BOT onto QB/K/DEF.
+    for (let i = 0; i < 12; i++) {
+      const pos = i < 7 ? "RB" : "WR";
+      await prisma.pick.create({
+        data: {
+          draftId: draft.id,
+          leagueMemberId: ownerMembershipId,
+          playerId: (await createTestPlayer({ nflTeam: "KC", position: pos })).id,
+          pickNumber: i + 1,
+        },
+      });
+    }
+    await prisma.draft.update({ where: { id: draft.id }, data: { currentPickNumber: 13 } });
+    const rb = await createPlayerWithAdp(league.scoringFormat, 5, { position: "RB", fullName: "Best available RB" });
+    const qb = await createPlayerWithAdp(league.scoringFormat, 50, { position: "QB", fullName: "QB" });
+
+    const outcome = await processExpiredDraftTurn(league.id);
+
+    expect(outcome.outcome).toBe("picked");
+    if (outcome.outcome !== "picked") throw new Error("unreachable");
+    // Raw BEST_AVAILABLE picks the RB (lower ADP) — a BOT in this exact
+    // shape would have been forced onto the QB by lineup feasibility.
+    expect(outcome.result.pick.playerId).toBe(rb.id);
+    expect(outcome.result.pick.playerId).not.toBe(qb.id);
+  });
+});
+
 describe("findExpiredActiveDraftLeagueIds", () => {
   beforeEach(async () => {
     await cleanupLeagueTestData();

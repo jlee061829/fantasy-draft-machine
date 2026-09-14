@@ -808,10 +808,49 @@ Last updated: September 2026
   - the established cross-package stale-`dist` convention (fresh `packages/shared`/`packages/database` build before trusting `apps/socket-server`/`apps/web` test results) was followed throughout, including after the K/DEF timing-rule revision; `apps/web/tsconfig.tsbuildinfo`/`next-env.d.ts` churn was restored via `git checkout --` after each build/typecheck pass
   - the synthetic-pool simulation's K/DEF zero-count rate is notably higher than the real-dev-DB run's (58%/33% vs. 0%/9%) — real seeded ADP data (43 K, 32 DEF candidates) evidently has enough density to nearly saturate an 11-BOT league's final 3 rounds, while a thinner or less evenly-shaped synthetic tail creates more contention; this is reported as a real supply/timing-window interaction, not addressed with a code change, consistent with "no minimum-position enforcement" for 5.5
   - a scratch verification script was used against the real dev database and kept only in the session scratchpad directory, never committed; the leagues it created were left in the dev database, consistent with prior milestones' manual-verification precedent
+- Phase 5 Milestone 5.6 — Lineup-Aware Bot Strategy Variants + Phase 5 Closeout:
+  - introduced the universal, strategy-neutral BOT starting-lineup convention: `QB:1, RB:2, WR:2, TE:1, FLEX:1 (RB|WR|TE), K:1, DEF:1` — 9 fixed starters — as a **code-level BOT drafting-domain constant** (`STARTING_LINEUP_REQUIREMENTS`/`FLEX_ELIGIBLE_POSITIONS`/`FLEX_SLOTS`/`STARTING_LINEUP_TOTAL` in new `packages/shared/src/draft/lineup.ts`), not a persisted lineup-slot schema, not per-league configurable, and never enforced against a HUMAN's own draft choices. For the product's fixed `rosterSize=15`: 9 starters, 6 discretionary bench slots
+  - added pure `getMissingStartingLineupSlots(counts)`/`canFieldStartingLineup(counts)`/`wouldSelectionPreserveLineupFeasibility(counts, position, remainingPicksIncludingThisOne)` to `packages/shared` — FLEX is satisfied purely by surplus (`max(0,RB-2) + max(0,WR-2) + max(0,TE-1) >= 1`); K/DEF never contribute to FLEX; an unrecognized position key is inert rather than throwing
+  - **lineup feasibility is the one new hard (non-strategy) BOT rule**: a candidate is feasible only when `remainingPicksAfterThisPick >= missingRequiredSlotsAfterThisPick`; this lets a BOT draft freely while picks remain to spare, then forces it onto a still-missing required position once the pressure point is reached — verified at the exact worked pressure points (4 picks remaining/discretionary RB still allowed vs. 3 remaining/forced onto QB-K-DEF)
+  - **small-roster fallback**: when `rosterSize < STARTING_LINEUP_TOTAL (9)`, the fixed lineup cannot mathematically fit at all — lineup-feasibility filtering is bypassed entirely (onesie hard caps still apply, ordinary strategy scoring continues), so the selector never deadlocks merely because the lineup is impossible to complete. New product leagues remain fixed at 15 rounds; this only matters for historical/internal small-`rosterSize` configurations
+  - **impossible-lineup fallback**: pipeline is raw eligible → hard onesie filtering → lineup feasibility → strategy scoring. If feasibility filtering would empty the onesie-eligible set, it relaxes back to the full onesie-eligible set (never further, to onesie-ineligible candidates) so the draft keeps moving when the real player pool can no longer satisfy the lineup. If raw candidates exist but *none* survive hard onesie eligibility, the selector returns `null` and the existing `BotPickExhaustedError` path executes — described precisely as "no BOT-strategy-eligible candidate remains under the universal hard roster rules," not raw player-pool exhaustion. No new error class was introduced
+  - **universal hard onesie rules** (new `packages/shared/src/draft/onesie-eligibility.ts`, strategy-neutral — no strategy parameter exists in this file at all): `K<=1`, `DEF<=1`, `QB<=2`, `TE<=2`, enforced as hard eligibility exclusions, never soft penalties. `K2`/`DEF2`/`QB3+`/`TE3+` are removed from the candidate pool entirely before scoring, even against a dramatically better raw ADP/searchRank on the duplicate — verified directly, proving exclusion rather than a beatable penalty
+  - K/DEF timing rule is unchanged in shape from Phase 5.5 (`+100` before `lateWindowStart = max(1, rosterSize-2)`, `+0` during it) but now applies **only to the first K/DEF** — Phase 5.5's duplicate-ownership penalty component (`0/+40/+80`) was deleted as dead code, since a BOT can structurally never own >=1 K/DEF and still see a K/DEF candidate reach the scoring stage under the new hard cap
+  - **elite QB/TE thresholds**: `ELITE_QB_RANK_THRESHOLD = 8` (positional ranks QB1–QB8 elite, QB9+ non-elite), `ELITE_TE_RANK_THRESHOLD = 5` (TE1–TE5 elite, TE6+ non-elite) — **positional** rank, computed against the full rostered population for the league's scoring format, **not** overall ADP rank and **not** recomputed relative to the shrinking undrafted pool; a player's elite classification is fixed for the entire draft regardless of what other teams pick
+  - **backup window**: `backupWindowStart = max(1, rosterSize - 5)` — round 10 of 15 for the product default (rounds 1–9 closed, 10–15 open)
+  - **QB2/TE2 eligibility** (evaluated by `isCandidateOnesieEligible`): owns 0 → always eligible; owns 1 elite → forbidden for the rest of the draft; owns 1 non-elite (including a null positional rank, treated as non-elite so an unranked player never blocks a legitimate late upside pick) → eligible only once the backup window is open; owns 2 → QB3/TE3 forbidden unconditionally. QB2/TE2 remain optional, never mandatory — no test asserts every non-elite QB1/TE1 roster takes a backup
+  - added internal `packages/database/src/drafts/positional-adp-rank.ts` — `getPositionalAdpRank(tx, {playerId, position, scoringFormat})`, ranked by `ADP ASC, searchRank ASC NULLS LAST, id ASC` against the full rostered positional population (not draft-state-relative), returning `null` when the player has no usable ADP row for the format. Not exported from `@fdm/database`'s public entry point. Called at most twice per BOT turn (only when the BOT owns exactly one QB and/or exactly one TE) — never once per candidate
+  - added persisted, deterministic `LeagueMember.botStrategy` (`BotStrategy` enum: `BALANCED | RB_HEAVY | WR_HEAVY | HERO_RB`), extending the Phase 5.1 participant-shape `CHECK` constraint: `HUMAN ⇔ botStrategy IS NULL`, `BOT ⇔ botStrategy IS NOT NULL`. Persisted (not derived from `draftSlot`/creation order/in-memory state) specifically so strategy identity survives restart, reconnect, and process duplication, and follows `LeagueMember.id` rather than draft position
+  - migration `20260914120000_add_bot_strategy`: creates the `BotStrategy` enum, adds the nullable column, deterministically backfills every existing BOT row **per league**, `ORDER BY draftSlot ASC`, rotating `BALANCED → RB_HEAVY → WR_HEAVY → HERO_RB → repeat` (verified via an internal `RAISE EXCEPTION` check that zero BOT rows are left unresolved), only then tightens the `CHECK` constraint, and regenerates the Prisma client. Rehearsed first against a disposable database seeded with populated pre-5.6 data (2 leagues, 8 total HUMAN+BOT rows at non-sequential draft slots): 8 rows before, 8 rows after, correct per-league rotation, `HUMAN` rows' `botStrategy` remained `NULL`, both new invalid participant shapes rejected by the tightened constraint, disposable database dropped afterward — applied to `fantasy_draft`/`fantasy_draft_test` only once that rehearsal succeeded
+  - `fillOpenLeagueSlotsWithBots` assigns `BOT_STRATEGY_ROTATION[(existingBotCount + index) % 4]` — the identical indexing convention the existing `"CPU N"` ordinal already uses, so it continues correctly across a partial refill. No randomness anywhere
+  - `removeBotLeagueMembers` is unchanged and removes **all** BOT rows unconditionally (this product does not support partial BOT removal): Fill → rotation assigned; Remove-all → BOT rows gone; a subsequent refill restarts the rotation at `BALANCED`. If internal state ever contains existing BOTs alongside newly-opened slots (e.g. after raising `teamCount`), Fill defensively continues the rotation from the existing BOT count rather than restarting it
+  - `reorderLeagueMembers` required (and received) zero code changes: it operates purely on submitted `LeagueMember.id`s and final array order, so a pre-Draft reorder changes `draftSlot` but never `botStrategy` — verified directly, not merely reasoned about
+  - **BALANCED** (unchanged discretionary bands from Phase 5.5, minus the now-dead QB/TE 2+ bands): `RB` 0-2/+0, 3/+5, 4+/+12; `WR` 0-3/+0, 4/+5, 5+/+12; `QB` 0/+0, 1/+18; `TE` 0/+0, 1/+15
+  - **RB_HEAVY**: `RB` 0-4/+0, 5/+5, 6+/+12 (later than BALANCED); `WR` 0-2/+0, 3/+5, 4+/+12 (earlier than BALANCED)
+  - **WR_HEAVY**: exact mirror — `WR` 0-4/+0, 5/+5, 6+/+12; `RB` 0-2/+0, 3/+5, 4+/+12
+  - **HERO_RB**: `RB` 0 owned/+0 (let ADP naturally pull in one strong RB), 1 owned/+25 (sharp, deliberate discouragement of an immediate second RB), 2 owned/+8, 3+/+12 (normal depth logic resumes); `WR` identical to BALANCED. No round-1-RB hard requirement exists anywhere — ADP still governs *when* the first RB is actually taken
+  - `ZERO_RB` was explicitly and deliberately **not** implemented — the four strategies above were judged sufficient to prove the architecture cleanly
+  - all four strategies share identical starting-lineup requirements, FLEX rules, K/DEF caps, QB/TE caps, elite tiers, backup window, lineup feasibility, and K/DEF timing — no strategy parameter is ever passed into any of the onesie/feasibility helpers. Strategies differ *only* in discretionary RB/WR/bench preference. This separation (universal hard roster intelligence vs. per-strategy discretionary preference) is a settled Phase 5 architectural rule
+  - **HUMAN separation, unchanged and re-verified**: `processExpiredDraftTurn` still calls only the original, completely unmodified `selectBestAvailablePlayerId` — no lineup feasibility, no onesie caps, no `botStrategy`, no elite-tier logic, no backup-window logic ever reaches a HUMAN's timeout pick. Manual HUMAN picks via `submitPick` are likewise entirely unrestricted by any BOT roster-intelligence rule — this is deliberate, not an oversight, and is proven (not just asserted) by dedicated regression tests showing a HUMAN can exceed every BOT hard cap (a 3rd QB, a 2nd K) and ignore feasibility pressure that would force a BOT onto QB/K/DEF
+  - **mixed HUMAN/BOT scarcity boundary, precisely scoped**: hard per-BOT K/DEF caps prove BOTs cannot consume a duplicate and starve *each other* whenever enough supply exists for the BOT population — this is **not** generalized to a claim that total league-wide K/DEF consumption never exceeds `teamCount` in a mixed league, since a HUMAN is entirely outside BOT onesie enforcement and may legally draft duplicate K/DEF. If HUMAN picks deplete a position so a BOT can no longer complete its ideal lineup: no player reservation occurs, no HUMAN pick is reclaimed, hard BOT caps remain intact, lineup feasibility falls back per the impossible-lineup rule above, and the draft continues on any remaining BOT-strategy-eligible candidate. A dedicated regression test constructs exactly this scenario (a HUMAN drafts the league's only DEF; a BOT reaches 1-pick-remaining still missing DEF) and verifies all of the above
+  - **no global/cross-participant K/DEF reservation mechanism exists or was considered necessary** — deliberately rejected as unneeded complexity. For an all-BOT league, per-BOT demand is bounded (`<= 1` each), so total consumption can never exceed `teamCount`, which the product already caps at 20 — comfortably under real seeded supply (K=43, DEF=32) — so no coordination code is required; the 20-team stress simulation empirically confirmed total K/DEF consumption landed at exactly `teamCount` (20/20), never more
+  - final selector pipeline inside `processBotDraftTurn`'s existing locked transaction: lock (upstream) → read BOT + persisted `botStrategy` → read owned roster → derive position counts → derive owned QB/TE elite state (≤2 extra small queries) → load eligible candidates → hard onesie filter → lineup feasibility filter (with small-roster bypass/impossible-lineup fallback) → strategy scoring → ADP/searchRank ranking → deterministic tie-break → `applyPick` → commit. No change to `applyPick`, turn progression, the BOT sweep, socket broadcast behavior, `BotTurnOutcome`'s shape, or `wasAutopick: false`
+  - no UI changes, no Socket.IO/protocol changes, no bot-pacing changes, no user-facing strategy-selection surface — strategy remains an internal, server-only concept
+- Milestone 5.6 verification:
+  - `packages/shared`: 48/48 tests passing — this package had no test infrastructure before this milestone; `vitest` was added as a devDependency (already named in the stack table) along with `packages/shared/vitest.config.mts`, mirroring `packages/database`'s config minus the Postgres-specific `fileParallelism` setting (no database dependency exists in this package)
+  - `packages/database`: 184/184 tests passing — new coverage includes `positional-adp-rank.test.ts` (exact positional ordering, scoring-format sensitivity, tie-breaks, null-when-no-ADP, and a dedicated test proving rank stays static after a higher-ranked player at the same position is drafted away), an extensively rewritten `position-aware-selection.test.ts` (hard K/DEF/QB/TE cap exclusion against dramatically-better-value duplicates, elite/non-elite QB and TE backup gating across both sides of the backup window including null-rank cases, feasibility-vs-backup-window precedence, small-roster-fallback non-deadlock, impossible-lineup fallback, and per-strategy RB/WR band differentiation), a new mixed-scarcity regression in `bot-turn.test.ts`, new HUMAN/BOT onesie-separation regressions in `autopick.test.ts`, new `botStrategy` CHECK-constraint tests in `league-member-participant.test.ts`, and a new `lineup-strategy-simulation.test.ts` (12-team mixed-strategy simulation, 20-team all-BOT stress simulation, and a 4-team determinism replay)
+  - `apps/socket-server`: 37/37 tests passing, unaffected — no source changes were needed
+  - `apps/web`: 370/370 tests passing — new coverage in `fill-bots.test.ts` for deterministic strategy-rotation assignment, non-null-for-BOT/null-for-HUMAN, rotation continuation after a partial capacity increase, strategy surviving a pre-Draft reorder, full-Remove-then-refill restarting at `BALANCED`, and persisted-value stability across independent reads
+  - workspace-wide typecheck passes; workspace-wide build passes with a fresh `packages/shared`/`packages/database` build completed first, per the established cross-package convention
+  - **12-team, 15-round, SNAKE, all-BOT simulation** (3 of each strategy, 180 picks): draft `COMPLETE`, 180 unique picks, every BOT received exactly 15 picks, every BOT satisfied `K<=1, DEF<=1, QB<=2, TE<=2`, and **every BOT could field a valid starting lineup** — the primary new Phase 5.6 correctness invariant. QB1-only: 8, QB2: 4; TE1-only: 5, TE2: 7; every QB2/TE2 case verified its first pick at that position was non-elite-or-null-rank and its backup was selected no earlier than round 10. Per-strategy average roster shapes (representative verification output, not a permanent product contract): `BALANCED` QB1.33/RB5.00/WR5.00/TE1.67/K1/DEF1; `RB_HEAVY` QB1.33/RB6.67/WR3.67/TE1.33/K1/DEF1; `WR_HEAVY` QB1.33/RB4.67/WR5.33/TE1.67/K1/DEF1; `HERO_RB` QB1.33/RB3.67/WR6.33/TE1.67/K1/DEF1 — directional differentiation (RB_HEAVY > WR_HEAVY on RB, WR_HEAVY > RB_HEAVY on WR, HERO_RB clearly distinct from BALANCED) was achieved with no constant tuning after the frozen bands were implemented
+  - **20-team, 15-round, SNAKE, all-BOT stress simulation** (300 picks, real-dev-mirrored supply K=43/DEF=32): draft `COMPLETE`, 300 unique picks, every BOT `K<=1`/`DEF<=1`, **every BOT could field a valid starting lineup**, total K consumption = 20, total DEF consumption = 20, zero `K2`/`DEF2` anywhere — this result is scoped explicitly to the all-BOT case and is not generalized to mixed HUMAN/BOT leagues (see the mixed-scarcity boundary above)
+  - **determinism**: two independent 4-team/15-round/60-pick runs from identical initial state produced an identical `(pickNumber, draftSlot, playerFullName, botStrategy)` sequence — no randomness exists anywhere in the selector or in strategy assignment
+  - **manual real-dev verification**: a 12-team league (1 legitimate HUMAN participant, 11 BOTs) was created against the real dev database and its real seeded 1,068-player pool; Fill Bots produced the exact deterministic `BALANCED, RB_HEAVY, WR_HEAVY, HERO_RB` rotation; the HUMAN was reordered to a different draft slot and every BOT's `botStrategy` was confirmed unchanged afterward; the draft was driven to completion (180 real picks) using the real, unmodified `submitPick`/`processBotDraftTurn`; all 11 BOTs achieved a valid starting lineup, all respected `K<=1/DEF<=1/QB<=2/TE<=2`, and strategy bench shapes visibly differed (e.g. one `HERO_RB` bot finished roughly RB2/WR9). A standalone `tsx`/Node-24 package-resolution issue prevented the scratch script from importing `apps/web`'s own TypeScript service-wrapper files directly, so the script constructed the surrounding league/member/draft state via equivalent direct Prisma calls while exercising the real, unmodified `submitPick`/`processBotDraftTurn` — the actual Phase 5.6 logic under verification; normal Fill/Remove/reorder/start wrapper behavior remains covered by the automated real-Postgres suite, not re-exercised manually here. The manual script's HUMAN turns used a naive always-lowest-undrafted-id placeholder solely to advance the draft, which produced a deliberately degenerate roster — this demonstrates only that manual `submitPick` intentionally enforces no BOT lineup intelligence, and is not a representation of real HUMAN timeout `BEST_AVAILABLE` behavior (separately covered by the automated `autopick.test.ts` suite). The scratch script was deleted afterward and never committed; the created league was left in the dev database, consistent with prior milestones' precedent
+  - one Prisma interactive-transaction timeout occurred once during a full `packages/database` suite run under system load and did not reproduce on either of two immediate full-suite retries — treated as non-reproducing environmental flakiness, not a functional defect
 
 ### Current phase
 
-**Phase 5 — Bot Managers + Mock Drafts — IN PROGRESS**
+**Phase 5 — Bot Managers + Mock Drafts — COMPLETE**
 
 Completed:
 
@@ -824,6 +863,7 @@ Completed:
 - Phase 5 Milestone 5.3 — Server-Side Bot Turn Orchestration — COMPLETE
 - Phase 5 Milestone 5.4 — Mock Draft Creation / Fill Empty Slots with Bots — COMPLETE
 - Phase 5 Milestone 5.5 — Position-Aware Bot Strategy — COMPLETE
+- Phase 5 Milestone 5.6 — Lineup-Aware Bot Strategy Variants + Phase 5 Closeout — COMPLETE
 
 Current Phase 5 status:
 - 5.1 — Bot Membership / Participant Data Model — **COMPLETE**
@@ -831,9 +871,9 @@ Current Phase 5 status:
 - 5.3 — Server-Side Bot Turn Orchestration — **COMPLETE**
 - 5.4 — Mock Draft Creation / Fill Empty Slots with Bots — **COMPLETE**
 - 5.5 — Position-Aware Bot Strategy — **COMPLETE**
-- 5.6 — Bot Strategy Variants + Phase 5 Closeout — **NEXT**
+- 5.6 — Lineup-Aware Bot Strategy Variants + Phase 5 Closeout — **COMPLETE**
 
-**Phase 5 is not complete.** The data-model foundation (5.1), BEST_AVAILABLE decision logic (5.2), server-side BOT turn orchestration (5.3), product-accessible mock-draft creation (5.4), and position-aware BOT drafting (5.5) have all shipped. A commissioner can now legitimately create BOT `LeagueMember`s through the product (`Fill Open Slots with Bots` on `/leagues/[leagueId]/draft`), optionally remove them, optionally use the existing reorder UI to choose their own draft position before starting, start the resulting mixed HUMAN/BOT league through the unchanged `startDraft`, and watch BOT turns get picked for automatically, server-side, through the same authoritative transactional/broadcast path every other pick source uses. **One real human can now run a full solo mock draft against bots with no fake accounts, and those bots draft with roster-aware judgment** — deprioritizing an over-stocked QB/TE position, tolerating deep RB/WR benches, and strongly deferring K/DEF until the final 3 rounds — rather than blindly following raw ADP. What remains for Phase 5 is closeout: strategy variants and a final Phase 5 audit (5.6). See Milestones 5.1/5.2/5.3/5.4/5.5's own completed-work notes above for the exact boundary of what shipped at each step.
+**Phase 5 is complete.** The data-model foundation (5.1), BEST_AVAILABLE decision logic (5.2), server-side BOT turn orchestration (5.3), product-accessible mock-draft creation (5.4), position-aware BOT drafting (5.5), and lineup-aware strategy variants + closeout (5.6) have all shipped. A commissioner can create BOT `LeagueMember`s through the product (`Fill Open Slots with Bots` on `/leagues/[leagueId]/draft`), optionally remove them, optionally use the existing reorder UI to choose their own draft position before starting, start the resulting mixed HUMAN/BOT league through the unchanged `startDraft`, and watch BOT turns get picked for automatically, server-side, through the same authoritative transactional/broadcast path every other pick source uses. **Every BOT now drafts with both roster-aware judgment and hard roster-composition intelligence**: it deprioritizes an over-stocked position, tolerates deep RB/WR benches, strongly defers K/DEF until the final 3 rounds, obeys hard `K<=1/DEF<=1/QB<=2/TE<=2` caps, gates a QB2/TE2 backup behind an elite-positional-rank-plus-late-window rule, and — the Phase 5.6 addition — protects its own ability to field a complete starting lineup by the end of the draft, all while following one of four deterministic, persisted strategy variants (`BALANCED`/`RB_HEAVY`/`WR_HEAVY`/`HERO_RB`) that shape only its discretionary bench construction. HUMAN drafting (manual picks and timer-expiry autopick) remains deliberately untouched by every one of these BOT-only rules. See Milestones 5.1–5.6's own completed-work notes above for the exact boundary of what shipped at each step.
 
 Milestone 3.5 status: the roadmap originally scoped a standalone "Reconnect/Resync" milestone after 3.4. Its core mechanism — mint a fresh SocketTicket, reconnect, rejoin via `draft:join`, and resync from authoritative Postgres state — was already implemented and manually verified in **3.3b**, before 3.4 existed. That resync path re-reads whatever the current authoritative Draft state is, so it needed no additional code to also reflect autopick-driven state changes made by the 3.4 sweep while a client was disconnected. What genuinely was never built and remains open is presence (`user:joined`/`user:left`, socket-disconnect-driven room cleanup — already listed under "Not yet implemented" and explicitly Phase 4 scope) and event replay/incremental recovery (also already listed). There is no distinct, un-started body of "3.5" work to schedule separately from those already-tracked items.
 
@@ -883,7 +923,7 @@ Current Phase 4 capabilities:
 - a successful `draft:pick` ack now triggers an immediate `draft:join` resync rather than only waiting on the room-wide broadcast, substantially narrowing the previously-documented ack-success/broadcast-loss stuck-pending edge with no protocol change
 - a `COMPLETE` Draft hides the Available Players Action column entirely (reusing the panel's existing read-only mode) instead of showing disabled Draft buttons
 
-Current Phase 5 capabilities (Milestones 5.1–5.5):
+Current Phase 5 capabilities (Milestones 5.1–5.6):
 - `LeagueMember` rows may be `HUMAN` (a real `User`) or `BOT` (no `User`/OAuth identity at all), enforced by a database `CHECK` constraint
 - a bot's participant identity is its own `LeagueMember.id`; there is no fake Auth.js identity anywhere for a bot
 - multiple bots may coexist in one league (`userId = null` rows don't collide under `@@unique([leagueId, userId])`)
@@ -900,9 +940,12 @@ Current Phase 5 capabilities (Milestones 5.1–5.5):
 - **verified in Milestone 5.4 that the existing `reorderLeagueMembers` service, unmodified, already supports a mixed HUMAN/BOT membership list** — a commissioner may Fill Bots, then use the existing reorder UI (now linked directly from the pre-draft page via a **"Manage draft order"** link) to move themselves away from slot 1, then Start Draft; the resulting `draftSlot` assignment, not the commissioner's identity or original slot, determines who is on the clock first, for both LINEAR and SNAKE draft types
 - **as of Milestone 5.5, BOT turns are roster-aware rather than pure BEST_AVAILABLE**: `processBotDraftTurn` selects players via `selectPositionAwareBotPlayerId` (`packages/database/src/drafts/position-aware-selection.ts`, internal to `@fdm/database`, not exported through its public entry point), which scores the full eligible candidate pool by ADP/searchRank plus a soft additive penalty based on how many of that position the BOT already owns in this draft, plus (an explicit product decision) a strong timing penalty that defers K/DEF until the final 3 rounds. Human timer-expiry autopick (`processExpiredDraftTurn`) is completely unaffected — it still calls the original, unmodified `selectBestAvailablePlayerId`, so a human who misses their deadline still gets pure BEST_AVAILABLE. See "Bot position-aware strategy conventions" below for full detail
 - position-aware BOT strategy introduced no lineup-slot schema, no minimum-position guarantee, and no schema/protocol/UI change anywhere — it is a drafting heuristic layered entirely inside the existing locked-transaction pick path, not a roster validator; a BOT may still finish without a K or DEF in some situations, which is accepted, not treated as a defect
-- see Milestone 5.1's, 5.2's, 5.3's, 5.4's, and 5.5's own notes for the full boundary of what shipped, and "Known issue — League deletion blocked by Pick → LeagueMember FK ordering" below for a verified, still-open limitation Milestone 5.1 surfaced
+- **as of Milestone 5.6, BOTs additionally protect their own ability to field a complete starting lineup**: a universal, code-level `STARTING_LINEUP_REQUIREMENTS` (QB1/RB2/WR2/TE1/FLEX1/K1/DEF1 = 9 starters) plus hard onesie caps (`K<=1, DEF<=1, QB<=2, TE<=2`) and an elite-positional-rank-gated QB2/TE2 backup rule (backup window opens at `max(1, rosterSize-5)`) together mean a BOT can no longer finish with, e.g., zero QBs or five defenses — while bench composition (how many extra RB/WR, whether a backup QB/TE gets taken) remains strategy-driven and unenforced beyond that floor. Lineup feasibility outranks strategy preference but never overrides a HUMAN's own manual pick or timer-expiry autopick, both of which remain completely unaffected
+- **as of Milestone 5.6, BOT strategy is a persisted, deterministic, restart-safe first-class concept**: `LeagueMember.botStrategy` (`BALANCED | RB_HEAVY | WR_HEAVY | HERO_RB`) is assigned by `fillOpenLeagueSlotsWithBots` via a fixed rotation, survives reorder/restart/reconnect because it lives on the row itself, and shapes only discretionary RB/WR/bench preference — never the universal hard roster rules above
+- position-aware/lineup-aware BOT strategy introduced no lineup-slot schema, no minimum-position guarantee beyond the fixed starting lineup itself, and no schema/protocol/UI change anywhere beyond the one `botStrategy` column — it is a drafting heuristic layered entirely inside the existing locked-transaction pick path, not a general-purpose roster validator
+- see Milestone 5.1's through 5.6's own notes for the full boundary of what shipped, and "Known issue — League deletion blocked by Pick → LeagueMember FK ordering" below for a verified, still-open limitation Milestone 5.1 surfaced
 
-**Phase 4 exit criteria satisfied.** All six milestones (4.1–4.6) are complete, and Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect. Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) remain complete and frozen as well. Horizontal scalability (Redis pub/sub across multiple socket-server instances), rate limiting, structured error responses, Playwright E2E coverage, and CI remain explicitly deferred to Phase 5's own closeout (5.6) and beyond; Phase 5 itself is underway (Milestones 5.1–5.5 complete, 5.6 next).
+**Phase 4 exit criteria satisfied.** All six milestones (4.1–4.6) are complete, and Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect. Phase 3's originally-scoped milestones (3.1–3.4, plus the reconnect/resync capability originally scoped as 3.5 — see note above) remain complete and frozen as well. **Phase 5 exit criteria are also now satisfied** (Milestones 5.1–5.6 all complete — see "Phase 5 closeout" under Build phases). Horizontal scalability (Redis pub/sub across multiple socket-server instances), rate limiting, structured error responses, Playwright E2E coverage, and CI remain explicitly deferred to Phase 6 and beyond.
 
 ### Not yet implemented
 
@@ -920,9 +963,12 @@ Current Phase 5 capabilities (Milestones 5.1–5.5):
 - GitHub Actions CI
 - `Pick` "source" concept (`PickSource`) distinguishing MANUAL/AUTOPICK/BOT — deferred; see "Settled decisions" (already derivable today from `Pick.leagueMemberId` joined against `LeagueMember.participantType`/`Pick.wasAutopick`, with zero new columns)
 - a BOT-specific visual indicator/badge on individual picks in the draft-room UI (a BOT pick currently renders with no `AUTO` badge, since `wasAutopick: false`, and no BOT-specific pick-level badge exists either — Milestone 5.4 added a member-level `(BOT)` text marker in the draft order/board header/roster selector, which is a different thing from a pick-level badge)
-- bot strategy variants, personality, seed/randomness, or difficulty configuration fields — **position-aware bot drafting itself is done (Milestone 5.5)**; what remains is choosing *between* strategies, not having one at all — see "Bot position-aware strategy conventions" and Phase 5.6
-- a `botStrategy` schema field or any strategy-selection/dispatch layer — 5.5 shipped exactly one BOT strategy (position-aware), applied identically to every BOT; there is nothing to select between yet
-- lineup-slot enforcement / a guaranteed minimum roster composition (e.g. "every BOT must end with at least 1 K and 1 DEF") — 5.5 is a drafting heuristic, not a roster validator; see "Bot position-aware strategy conventions"
+- user-selectable/configurable BOT strategy — Phase 5.6 shipped four deterministic strategy variants assigned automatically by a fixed rotation; no UI or API exists for a commissioner (or anyone) to choose or change a specific BOT's strategy
+- `ZERO_RB` and any strategy beyond `BALANCED`/`RB_HEAVY`/`WR_HEAVY`/`HERO_RB` — deliberately excluded from Phase 5.6 as unnecessary to prove the architecture
+- randomized personalities, seed/randomness, or difficulty configuration for BOT drafting — every BOT strategy remains fully deterministic
+- a per-league configurable starting lineup, or any lineup-management UI — the Phase 5.6 starting lineup (QB1/RB2/WR2/TE1/FLEX1/K1/DEF1) is a fixed, code-level BOT drafting-domain constant, not a product-configurable setting
+- post-draft/weekly lineup management for any participant, HUMAN or BOT
+- HUMAN lineup enforcement or HUMAN draft assistance of any kind — Phase 5.6's lineup feasibility and onesie rules are exclusively BOT-only, verified by dedicated separation tests; a HUMAN's manual picks and timer-expiry autopick remain completely unrestricted by them
 - temporary human-to-CPU turn delegation (distinct from bot-owned mock-draft slots — see "Future roadmap notes")
 - tighter BOT-pick pacing than "one pick per league per sweep tick" — a long all-BOT chain currently drains at up to one pick per sweep interval (default 2000ms) per league; this is an intentional correctness-first starting point (see Milestone 5.3's notes) and was carried unchanged through Milestone 5.4, which made this pacing product-observable for the first time (a real solo mock draft with many bot slots) rather than only a theoretical concern — observed acceptable during 5.4's manual verification, but may be revisited later if real mock-draft UX demands faster pacing; any such change must remain row-lock-based, not introduce a new correctness mechanism
 - fixing League deletion's FK-ordering failure against Draft/Pick history — see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering"; not a current blocker since no delete-League feature exists, but unresolved
@@ -932,13 +978,13 @@ Current Phase 5 capabilities (Milestones 5.1–5.5):
 
 Ideas discussed for a possible future phase, not yet scoped, designed, or implemented. Nothing below is committed work, informs any current-phase decision, or should be treated as a data-model/implementation change that has happened.
 
-**Bot Managers + Mock Drafts — superseded by Phase 5 (Milestones 5.1–5.5 complete as of this update).** This subsection is preserved for historical/design-rationale context; it is no longer "unscoped" — see "Build phases" for the committed 5.1–5.6 milestone list, "Settled decisions" for what 5.1–5.5 actually locked in, and the Milestone 5.1/5.2/5.3/5.4/5.5 completed-work notes above for exactly what shipped. The bullets below predate implementation and are evaluated one at a time as each assumption turned out to hold or need adjustment:
+**Bot Managers + Mock Drafts — superseded by Phase 5 (Milestones 5.1–5.6 complete; Phase 5 is COMPLETE).** This subsection is preserved for historical/design-rationale context; it is no longer "unscoped" — see "Build phases" for the completed 5.1–5.6 milestone list, "Settled decisions" for what 5.1–5.6 actually locked in, and the Milestone 5.1–5.6 completed-work notes above for exactly what shipped. The bullets below predate implementation and are evaluated one at a time as each assumption turned out to hold or need adjustment:
 
 - bots would be first-class draft participants, not fake OAuth `User`/`Account`/`Session` rows — no Auth.js identity is manufactured for a bot. **Held**: a bot is a `LeagueMember` row with `participantType = BOT`, never a fake `User`.
 - bot picks would run server-side (most likely from `apps/socket-server`, alongside the existing turn-expiration sweep), never as browser-side automation. **Done in Phase 5.3**: the existing turn sweep gained a second phase, `runBotTurnSweep`, that discovers and processes BOT-current Drafts server-side — no browser/socket involvement, no fake client identity — see Milestone 5.3's completed-work notes.
 - a bot's turn would reuse the same authoritative transactional pick pipeline (`submitPick`/`applyPick`) every other pick source already uses — no second pick-writing path. **Done in Phase 5.3**: `processBotDraftTurn` calls the identical `applyPick` (with the BOT's own `leagueMemberId`, `wasAutopick: false`) that `submitPick` and `processExpiredDraftTurn` already call — no second write path exists.
 - a bot-manager pick is intentionally distinct from a human's timer-expiry autopick, even though both are machine-selected; a future `Pick` "source" concept might eventually distinguish `MANUAL`, `AUTOPICK` (timer expiry), and `BOT` (an intentional non-human manager) rather than overloading the existing `wasAutopick` boolean for both. **Deliberately not done in 5.1 or 5.3**: `Pick.leagueMemberId` joined against `LeagueMember.participantType` (plus `Pick.wasAutopick` for the human-autopick-vs-manual distinction) already lets a caller derive MANUAL/AUTOPICK(human)/BOT with zero new columns, so `PickSource` remains deferred until that derivation is shown to be insufficient.
-- a first bot implementation would likely be a simple ADP/best-available selector, reusing the existing two-tier autopick approach; roster/position-aware bot strategy would be later, optional work. **Done (decision logic only) in Phase 5.2**: the two-tier ranking primitive was extracted from `autopick.ts` into the shared, exported `selectBestAvailablePlayerId`, with a rostered-eligibility correction applied along the way — see Milestone 5.2's completed-work notes. No bot turn actually calls it yet; that's Phase 5.3. **Position-aware bot strategy itself: done in Phase 5.5** — `processBotDraftTurn` now calls a dedicated, internal `selectPositionAwareBotPlayerId` (roster-ownership-based positional penalties, plus an explicit product decision deferring K/DEF to the final 3 rounds), while `selectBestAvailablePlayerId` continues to serve human timer-autopick, unmodified — see "Bot position-aware strategy conventions" and Milestone 5.5's completed-work notes.
+- a first bot implementation would likely be a simple ADP/best-available selector, reusing the existing two-tier autopick approach; roster/position-aware bot strategy would be later, optional work. **Done (decision logic only) in Phase 5.2**: the two-tier ranking primitive was extracted from `autopick.ts` into the shared, exported `selectBestAvailablePlayerId`, with a rostered-eligibility correction applied along the way — see Milestone 5.2's completed-work notes. No bot turn actually calls it yet; that's Phase 5.3. **Position-aware bot strategy itself: done in Phase 5.5** — `processBotDraftTurn` now calls a dedicated, internal `selectPositionAwareBotPlayerId` (roster-ownership-based positional penalties, plus an explicit product decision deferring K/DEF to the final 3 rounds), while `selectBestAvailablePlayerId` continues to serve human timer-autopick, unmodified — see "Bot position-aware strategy conventions" and Milestone 5.5's completed-work notes. **Lineup-aware BOT strategy variants: done in Phase 5.6** — a universal, code-level starting-lineup/onesie-cap/elite-backup layer now protects every BOT's ability to field a complete starting lineup regardless of strategy, and four deterministic, persisted strategy variants (`BALANCED`/`RB_HEAVY`/`WR_HEAVY`/`HERO_RB`) shape discretionary bench construction on top of it — see "Bot lineup-aware strategy conventions" and Milestone 5.6's completed-work notes. This closes out the "bot strategy" line of work from this roadmap section entirely; only user-selectable strategy configuration (never scoped) remains open.
 - a mock-draft mode could fill empty League slots with bots; a separately-discussed idea — temporarily delegating an existing real human's slot to CPU control — is a distinct, later concern from bot-owned mock-draft slots and should not be conflated with it. **Done in Phase 5.4**: `fillOpenLeagueSlotsWithBots`/`removeBotLeagueMembers` (`apps/web/lib/leagues/`) fill/clear empty League slots with bots, commissioner-only and pre-Draft only, exposed through the pre-draft page — see Milestone 5.4's completed-work notes. Temporary human-to-CPU delegation remains unscoped and explicitly out of 5.4's (as it was out of 5.1's) data model.
 
 ### Deferred decisions
@@ -1279,6 +1325,25 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
   - no lineup-slot schema, minimum-position requirement, FLEX logic, or guaranteed roster composition was introduced — the strategy is a drafting heuristic operating entirely inside the existing pick-selection step, not a roster validator; a BOT finishing a draft with 0 K or 0 DEF in some situations is accepted, not treated as a correctness bug, and automated tests were written to never assert a minimum-position guarantee the strategy doesn't actually provide
   - fully deterministic by construction: pure function of committed Draft/Pick state, the requesting BOT's own roster, the league's scoring format, and available Players — no randomness, weighting, personality, or difficulty exists anywhere in the selector; verified both at the single-call level (repeated calls against unchanged state) and at full-draft scale (two independent runs from identical initial state produce an identical pick sequence when compared by the stable tuple `pickNumber`/`draftSlot`/player identity — never by DB-generated ids, which differ across runs by construction)
   - Phase 5.5 introduced no changes to Draft-row locking, `applyPick`, turn progression, the BOT sweep, socket broadcast behavior, `BotTurnOutcome`, retry/error handling, `wasAutopick`'s meaning, the Socket.IO protocol, `apps/web`, `apps/socket-server`, `packages/shared`, or the Prisma schema — see "Bot position-aware strategy conventions" for the full behavioral contract
+- Phase 5.6 settled decisions — Lineup-Aware Bot Strategy Variants + Phase 5 Closeout:
+  - the fixed BOT starting lineup (`QB:1, RB:2, WR:2, TE:1, FLEX:1 (RB|WR|TE), K:1, DEF:1`, 9 starters) is a **code-level BOT drafting-domain constant** (`packages/shared/src/draft/lineup.ts`) — not a persisted lineup-slot schema, not a per-league configurable setting, and never enforced against a HUMAN's own draft choices. For `rosterSize=15`: 9 starters, 6 discretionary bench slots
+  - FLEX is satisfied purely by surplus (`max(0,RB-2) + max(0,WR-2) + max(0,TE-1) >= 1`); K/DEF never contribute; `getMissingStartingLineupSlots`/`canFieldStartingLineup`/`wouldSelectionPreserveLineupFeasibility` are pure, Prisma-free, and reusable independently of any transport
+  - lineup feasibility is the one new hard (non-strategy) BOT rule: `remainingPicksAfterThisPick >= missingRequiredSlotsAfterThisPick`; when `rosterSize < STARTING_LINEUP_TOTAL (9)` the fixed lineup cannot mathematically fit, so feasibility enforcement is bypassed entirely (onesie caps still apply) rather than deadlocking — this only matters for historical/internal small-`rosterSize` configurations, since new product leagues remain fixed at 15 rounds
+  - final selection precedence, settled: `1. raw player eligibility → 2. universal hard onesie eligibility → 3. starting-lineup feasibility → 4. BOT strategy preference → 5. ADP/searchRank value → 6. deterministic tie-breaks`. Hard roster intelligence outranks strategy preference; strategy only operates within whatever freedom remains after 1–3
+  - impossible-lineup fallback: if lineup-feasibility filtering would produce zero candidates while hard-onesie-eligible candidates still exist, feasibility relaxes and the hard-onesie-eligible set is scored directly — hard onesie rules themselves are **never** relaxed. If raw candidates exist but none survive hard onesie eligibility, the existing BOT exhaustion path (`BotPickExhaustedError`) may execute; this condition is described as "no BOT-strategy-eligible candidate remains under the universal hard roster rules," never as raw player-pool exhaustion. No new error class was introduced
+  - universal hard onesie rules, strategy-neutral, identical across every strategy: `K<=1, DEF<=1, QB<=2, TE<=2` — hard eligibility exclusions, not soft penalties, so `K2`/`DEF2`/`QB3+`/`TE3+` are forbidden outright regardless of value. Phase 5.5's K/DEF duplicate-ownership penalty and QB/TE "2+ owned" bands are superseded and removed, since the positions they guarded against are now hard-forbidden and those branches could never execute
+  - K/DEF first-pick timing is unchanged from Phase 5.5: `+100` before `lateWindowStart = max(1, rosterSize-2)` (round 13 of 15), `+0` during it — this now applies only to the first K/DEF a BOT ever takes, since a second is categorically forbidden by the hard cap above
+  - elite QB/TE thresholds are static, positional-rank-based, and format-specific: `QB1–QB8` elite (`ELITE_QB_RANK_THRESHOLD=8`), `TE1–TE5` elite (`ELITE_TE_RANK_THRESHOLD=5`) — positional rank against the full rostered population for the league's `scoringFormat`, computed independently of draft progress; a player's elite/non-elite classification never changes because other teams drafted higher-ranked players at that position
+  - backup window: `backupWindowStart = max(1, rosterSize-5)` (round 10 of 15). QB2/TE2 eligibility: owns 0 → always eligible; owns 1 and elite → forbidden for the rest of the draft; owns 1 and non-elite (a null positional rank, meaning no usable format ADP, is treated as non-elite) → eligible only once the backup window is open; owns 2 → QB3/TE3 forbidden unconditionally. A backup remains optional, never mandatory
+  - `packages/database/src/drafts/positional-adp-rank.ts` (`getPositionalAdpRank`, internal, not exported from `@fdm/database`'s public entry point) ranks `ADP ASC, searchRank ASC NULLS LAST, id ASC` against the full rostered positional population for the format and returns `null` for a player with no usable ADP row; called at most twice per BOT turn (only for an owned QB1/TE1), never once per candidate
+  - `LeagueMember.botStrategy` (`BotStrategy` enum: `BALANCED | RB_HEAVY | WR_HEAVY | HERO_RB`) is **persisted**, extending the Phase 5.1 participant-shape `CHECK` constraint (`HUMAN ⇔ botStrategy IS NULL`, `BOT ⇔ botStrategy IS NOT NULL`) — persisted specifically so strategy identity survives restart/reconnect/process duplication and follows `LeagueMember.id`, never `draftSlot` or in-memory/creation-order state
+  - migration `20260914120000_add_bot_strategy` creates the enum, adds the nullable column, backfills every existing BOT row deterministically **per league** (`ORDER BY draftSlot ASC`, rotating `BALANCED → RB_HEAVY → WR_HEAVY → HERO_RB`), verifies zero unresolved rows before tightening the `CHECK` constraint, and regenerates the Prisma client — rehearsed against a disposable database seeded with populated pre-5.6 data before being applied to `fantasy_draft`/`fantasy_draft_test`
+  - `fillOpenLeagueSlotsWithBots` assigns the rotation via `BOT_STRATEGY_ROTATION[(existingBotCount + index) % 4]`, the same indexing convention the existing `"CPU N"` ordinal already uses, with no randomness; `removeBotLeagueMembers` is unchanged and removes all BOT rows unconditionally (no partial-removal concept exists), so a full Remove followed by a refill restarts the rotation at `BALANCED`; `reorderLeagueMembers` required zero changes and never alters `botStrategy`
+  - the four strategies (`BALANCED`, `RB_HEAVY`, `WR_HEAVY`, `HERO_RB`) differ only in discretionary RB/WR-depth penalty bands — see "Bot lineup-aware strategy conventions" for the exact bands — and share every universal rule above identically; no strategy parameter exists anywhere inside the onesie-eligibility or lineup-feasibility helpers. `ZERO_RB` was deliberately not implemented
+  - HUMAN timer-expiry autopick (`processExpiredDraftTurn` → `selectBestAvailablePlayerId`) and manual HUMAN picks (`submitPick`) remain completely unaffected by lineup feasibility, onesie caps, `botStrategy`, elite-tier logic, and backup-window logic — verified by dedicated regression tests, not merely asserted
+  - the mixed HUMAN/BOT scarcity boundary is precisely scoped: hard per-BOT K/DEF caps prove BOTs cannot starve each other whenever supply suffices for the BOT population, but this is **not** generalized to "total league K/DEF consumption never exceeds `teamCount`" for a mixed league — a HUMAN may legally draft duplicate K/DEF, and if HUMAN picks deplete a position a BOT needs, no reservation/reclaim mechanism exists; the draft continues via the impossible-lineup fallback instead
+  - no global/cross-participant K/DEF reservation mechanism was built — deliberately rejected as unneeded complexity given per-BOT demand is capped at 1 each and the product's `teamCount` ceiling (20) sits comfortably under real seeded K/DEF supply (43/32)
+  - Phase 5.6 introduced no changes to Draft-row locking, `applyPick`, turn progression, the BOT sweep, socket broadcast behavior, `BotTurnOutcome`, `wasAutopick`'s meaning, the Socket.IO protocol, `apps/socket-server`, or any UI/user-facing strategy-selection surface
 
 ## Non-negotiable engineering goals
 
@@ -2277,13 +2342,306 @@ This remains soft, not exclusionary — verified by a dedicated test where an ex
 
 **No schema changes.** No Prisma migration; no `botStrategy` field, strategy enum, lineup model, `PickSource`, or roster-slot table. Strategy variants (a second, genuinely different BOT policy, and any configuration surface to choose between them) remain Phase 5.6 work.
 
+### Bot lineup-aware strategy conventions
+
+Phase 5.6 conventions — the final Phase 5 milestone. This layers universal starting-lineup protection and hard onesie-position roster intelligence underneath Phase 5.5's position-aware scoring, and introduces four deterministic, persisted strategy variants that shape only what remains discretionary once that protection is satisfied.
+
+**The fixed BOT starting lineup:**
+
+```text
+QB:   1
+RB:   2
+WR:   2
+TE:   1
+FLEX: 1 (RB | WR | TE)
+K:    1
+DEF:  1
+-----------
+9 starters
+```
+
+This is a **code-level BOT drafting-domain convention** (`STARTING_LINEUP_REQUIREMENTS`/`FLEX_ELIGIBLE_POSITIONS`/`FLEX_SLOTS`/`STARTING_LINEUP_TOTAL` in `packages/shared/src/draft/lineup.ts`) — not a per-league configurable setting, not persisted as lineup-slot rows, and never enforced against a HUMAN's own draft choices (manual pick or timer-expiry autopick). For the product's fixed `rosterSize=15`: 9 starters, 6 discretionary bench slots.
+
+**FLEX** is satisfied purely by surplus, never a fixed position:
+
+```text
+flexSurplus = max(0, RB-2) + max(0, WR-2) + max(0, TE-1)
+FLEX satisfied when flexSurplus >= 1
+```
+
+K/DEF never contribute to FLEX. This logic (`getMissingStartingLineupSlots`, `canFieldStartingLineup`) is pure and Prisma-free, reusable independently of any transport.
+
+**Lineup feasibility** — the one new hard, non-strategy BOT rule. For each candidate:
+
+```text
+hypothetically add candidate
+→ recompute missing starting-lineup slots
+→ compute picks remaining after this selection
+
+candidate is feasible when:
+  remainingPicksAfterThisPick >= missingRequiredSlotsAfterThisPick
+```
+
+(`wouldSelectionPreserveLineupFeasibility`, `packages/shared/src/draft/lineup.ts`.) This allows ordinary discretionary drafting while picks remain to spare, then forces a still-missing required position once the pressure point is reached:
+
+```text
+4 picks remaining, missing QB/K/DEF → discretionary RB still allowed
+3 picks remaining, missing QB/K/DEF → discretionary RB no longer allowed; only QB/K/DEF are feasible
+```
+
+**Small-roster fallback:** if `rosterSize < STARTING_LINEUP_TOTAL (9)`, the fixed lineup cannot mathematically fit at all. In that case, lineup-feasibility enforcement is bypassed entirely — hard onesie rules (below) still apply, ordinary strategy scoring continues, and the selector never deadlocks merely because the lineup is impossible to complete. New product leagues remain fixed at 15 rounds; this only matters for historical/internal small-`rosterSize` configurations.
+
+**Final BOT selection precedence (settled):**
+
+```text
+1. raw player eligibility (undrafted, rostered)
+2. universal hard onesie eligibility
+3. starting-lineup feasibility
+4. BOT strategy preference
+5. ADP/searchRank value
+6. deterministic tie-breaks
+```
+
+Hard roster intelligence (2–3) always outranks strategy preference (4) — strategy only operates within whatever freedom remains after the hard rules are satisfied.
+
+**Impossible-lineup fallback.** Pipeline:
+
+```text
+raw eligible candidates
+→ hard onesie filtering
+→ lineup feasibility
+→ strategy scoring
+```
+
+If lineup-feasibility filtering would leave zero candidates while hard-onesie-eligible candidates still exist, feasibility relaxes back to the full hard-onesie-eligible set (never further, to onesie-*in*eligible candidates) and that set is scored directly — this keeps the draft moving when the real player pool can no longer satisfy the lineup requirement. Hard onesie rules are **never** relaxed. If raw candidates exist but none survive hard onesie eligibility, the selector returns `null` and the existing exhaustion path (`BotPickExhaustedError`) may execute. This condition is described precisely as:
+
+> no BOT-strategy-eligible candidate remains under the universal hard roster rules
+
+— never as raw player-pool exhaustion. No new error class was introduced for it.
+
+**Universal hard onesie rules**, strategy-neutral (no strategy parameter exists anywhere in `packages/shared/src/draft/onesie-eligibility.ts`):
+
+```text
+K   <= 1
+DEF <= 1
+QB  <= 2
+TE  <= 2
+```
+
+These are hard eligibility exclusions, not soft penalties — `K2`, `DEF2`, `QB3+`, and `TE3+` are removed from the candidate pool entirely before scoring ever runs, even against a dramatically better raw ADP/searchRank on the duplicate. Phase 5.5's K/DEF duplicate-ownership penalty (`0/+40/+80`) and the QB/TE "2+ owned" bands (`+60`/`+55`) are superseded and removed as dead code: a BOT can structurally never own `>=1` K/DEF or `>=2` QB/TE and still have such a candidate reach the scoring stage.
+
+**K/DEF first-pick timing** is unchanged in shape from Phase 5.5, now applying only to the *first* K/DEF a BOT ever takes (a second is categorically forbidden by the cap above):
+
+```text
+lateWindowStart = max(1, rosterSize - 2)   // round 13 of 15 for the product default
+
+before the late window → +100
+during the late window  → +0
+```
+
+```text
+Rounds 1–12:  strongly discourage the first K/DEF
+Rounds 13–15: normal first-K/DEF selection
+```
+
+**Elite QB/TE definitions** — static positional ADP rank, computed against the full rostered population for the league's own `scoringFormat`, **not** overall ADP rank and **not** recomputed relative to the shrinking undrafted pool:
+
+```text
+Elite QB = QB1–QB8    (ELITE_QB_RANK_THRESHOLD = 8)
+Elite TE = TE1–TE5    (ELITE_TE_RANK_THRESHOLD = 5)
+```
+
+A player's elite/non-elite classification is fixed for the entire draft — it never changes because other teams drafted higher-ranked players at that position.
+
+**Backup window:**
+
+```text
+backupWindowStart = max(1, rosterSize - 5)   // round 10 of 15 for the product default
+
+Rounds 1–9:   backup QB/TE window closed
+Rounds 10–15: backup QB/TE window open
+```
+
+**QB2 eligibility:**
+
+```text
+owns 0 QB              → QB1 may be selected normally
+owns 1 QB, elite        → QB2 forbidden for the rest of the draft
+owns 1 QB, non-elite     → QB2 eligible only once the backup window is open
+  (a null positional rank — no usable format ADP — is treated as non-elite)
+owns 2 QB               → QB3 forbidden unconditionally
+```
+
+**TE2 eligibility** is the identical model against `ELITE_TE_RANK_THRESHOLD`. In both cases the backup remains **optional, never mandatory** — no test asserts that every non-elite QB1/TE1 roster must take a second.
+
+**Positional ADP rank implementation:** `packages/database/src/drafts/positional-adp-rank.ts` — `getPositionalAdpRank(tx, {playerId, position, scoringFormat})`, ranked `ADP ASC, searchRank ASC NULLS LAST, id ASC` against the full rostered positional population for the format; returns `null` when the player has no usable ADP row for that format. Internal to `@fdm/database`, **not** exported from its public entry point — an implementation detail of BOT turn processing specifically, like `selectPositionAwareBotPlayerId` before it. Called at most twice per BOT turn (only when the BOT owns exactly one QB and/or exactly one TE) — never once per candidate, avoiding an N+1 query pattern against the candidate pool.
+
+**BotStrategy persistence.** New Prisma enum:
+
+```text
+BALANCED
+RB_HEAVY
+WR_HEAVY
+HERO_RB
+```
+
+persisted as `LeagueMember.botStrategy` (nullable at the schema level), with the Phase 5.1 participant-shape `CHECK` constraint extended rather than replaced:
+
+```text
+HUMAN: userId non-null, displayName null, botStrategy null
+BOT:   userId null,     displayName non-null, botStrategy non-null
+```
+
+Persisted — not derived from `draftSlot`, creation order, or in-memory state — specifically so strategy identity survives socket-server restart, web restart, bot-sweep restart, reconnect, and process duplication, and follows `LeagueMember.id` rather than draft position.
+
+**Migration** `20260914120000_add_bot_strategy`:
+
+1. creates the `BotStrategy` enum
+2. adds the nullable `LeagueMember.botStrategy` column
+3. deterministically backfills every existing BOT row **per league**, `ORDER BY draftSlot ASC`, rotating `BALANCED → RB_HEAVY → WR_HEAVY → HERO_RB → repeat`, verified via an internal `RAISE EXCEPTION` check that zero BOT rows are left with a null `botStrategy`
+4. only then tightens the participant-shape `CHECK` constraint to the widened predicate above
+5. preserves every existing row (no data loss)
+6. regenerates the Prisma client
+
+Rehearsed first against a disposable database seeded with populated pre-5.6 data (2 leagues, 8 total HUMAN+BOT rows at non-sequential draft slots): 8 rows before, 8 rows after, correct per-league rotation, `HUMAN` rows' `botStrategy` remained `NULL`, both new invalid participant shapes rejected by the tightened constraint, disposable database dropped afterward. Applied to `fantasy_draft`/`fantasy_draft_test` only once that rehearsal succeeded.
+
+**Strategy assignment.** `fillOpenLeagueSlotsWithBots` assigns:
+
+```text
+BALANCED
+RB_HEAVY
+WR_HEAVY
+HERO_RB
+repeat
+```
+
+via `BOT_STRATEGY_ROTATION[(existingBotCount + index) % 4]` — the identical indexing convention the existing `"CPU N"` displayName ordinal already uses. No randomness anywhere.
+
+`removeBotLeagueMembers` is unchanged and removes **all** BOT rows unconditionally — this product does not support partial BOT removal:
+
+```text
+Fill              → rotation assigned
+Remove (all bots) → BOT rows removed
+Refill            → rotation begins again from BALANCED
+```
+
+If internal state ever contains existing BOTs alongside newly-opened slots (e.g. after raising `teamCount` without a Remove in between), Fill defensively continues the rotation from the existing BOT count rather than restarting it.
+
+`reorderLeagueMembers` required, and received, zero code changes: reorder operates purely on submitted `LeagueMember.id`s and final array order, so a pre-Draft reorder changes `draftSlot` but never `botStrategy` — strategy follows membership identity, not draft position, verified directly.
+
+**BALANCED** (the Phase 5.5 discretionary bands, minus the now-superseded QB/TE "2+ owned" bands):
+
+```text
+RB: 0–2 → +0, 3 → +5, 4+ → +12
+WR: 0–3 → +0, 4 → +5, 5+ → +12
+QB: 0 → +0, 1 → +18
+TE: 0 → +0, 1 → +15
+```
+
+**RB_HEAVY:**
+
+```text
+RB: 0–4 → +0, 5 → +5, 6+ → +12   (later than BALANCED)
+WR: 0–2 → +0, 3 → +5, 4+ → +12   (earlier than BALANCED)
+```
+
+**WR_HEAVY** (exact mirror of RB_HEAVY):
+
+```text
+WR: 0–4 → +0, 5 → +5, 6+ → +12
+RB: 0–2 → +0, 3 → +5, 4+ → +12
+```
+
+**HERO_RB:**
+
+```text
+RB: 0 owned → +0    (let ADP naturally pull in one strong RB when value supports it)
+    1 owned → +25   (sharp, deliberate discouragement of an immediate second RB)
+    2 owned → +8    (normal depth logic resumes)
+    3+      → +12
+WR: same as BALANCED
+```
+
+No round-1-RB hard requirement exists anywhere — ADP still governs *when* the first RB is actually taken; the band only shapes what happens after. `ZERO_RB` was explicitly and deliberately **not** implemented — the four strategies above were judged sufficient to prove the architecture cleanly.
+
+**Strategy boundary (settled Phase 5 architectural rule).** All four strategies share identical:
+
+```text
+starting-lineup requirements
+FLEX rules
+K/DEF caps
+QB/TE caps
+elite tiers
+backup window
+lineup feasibility
+K/DEF timing
+```
+
+No strategy parameter exists anywhere inside the onesie-eligibility or lineup-feasibility helpers — strategies change *only* discretionary RB/WR/bench preference:
+
+```text
+universal hard roster intelligence = shared by every BOT, unconditionally
+strategy variant                   = preference within whatever freedom remains
+```
+
+**HUMAN separation, unchanged and re-verified.** `processExpiredDraftTurn` still calls only the original, completely unmodified `selectBestAvailablePlayerId` — no lineup feasibility, no onesie caps, no `botStrategy`, no elite-tier logic, no backup-window logic ever reaches a HUMAN's timeout pick. Manual HUMAN picks via `submitPick` are likewise entirely unrestricted by any BOT roster-intelligence rule. This is deliberate, and proven (not merely asserted) by dedicated regression tests showing a HUMAN can exceed every BOT hard cap (a 3rd QB, a 2nd K) and ignore feasibility pressure that would force a BOT onto QB/K/DEF.
+
+**Mixed HUMAN/BOT scarcity boundary — precisely scoped.** Hard per-BOT K/DEF caps prove BOTs cannot consume a duplicate K/DEF and starve *each other*, whenever enough supply exists for the BOT population. This is **not** generalized to a claim that total league-wide K/DEF consumption never exceeds `teamCount` in a mixed league — a HUMAN is entirely outside BOT onesie enforcement and may legally draft duplicate K/DEF. If HUMAN picks deplete a position so a BOT can no longer complete its ideal lineup:
+
+- no player reservation occurs
+- no HUMAN pick is reclaimed
+- hard BOT caps remain intact
+- lineup feasibility falls back per the impossible-lineup rule above
+- the draft continues on any remaining BOT-strategy-eligible candidate
+
+A dedicated regression test constructs exactly this scenario (a HUMAN drafts the league's only DEF; a BOT reaches 1-pick-remaining still missing DEF) and verifies every point above.
+
+**No global/cross-participant K/DEF reservation mechanism exists or was considered necessary.** Deliberately rejected as unneeded complexity: for an all-BOT league, per-BOT demand is bounded (`<=1` K, `<=1` DEF each), so total consumption can never exceed `teamCount`, which the product already caps at 20 — comfortably under real seeded supply (K=43, DEF=32) — so no coordination code is required. The 20-team stress simulation empirically confirmed total K/DEF consumption landed at exactly `teamCount` (20/20), never more.
+
+**Final selector pipeline**, entirely inside `processBotDraftTurn`'s existing locked transaction:
+
+```text
+1. Draft row already locked
+2. read BOT + persisted botStrategy
+3. read owned roster
+4. derive position counts
+5. derive owned QB/TE elite state (≤2 extra small queries)
+6. load eligible undrafted rostered candidates
+7. hard onesie filtering
+8. starting-lineup feasibility filtering (small-roster bypass / impossible-lineup fallback)
+9. strategy scoring
+10. ADP/searchRank ranking
+11. deterministic tie-break
+12. applyPick
+13. commit
+```
+
+No change to `applyPick`, turn progression, the BOT sweep, socket broadcast behavior, `BotTurnOutcome`'s shape, or `wasAutopick: false`. No UI, Socket.IO/protocol, or bot-pacing changes were introduced — strategy remains an internal, server-only concept with no user-facing selection surface.
+
+**Representative simulations.** 12-team/15-round/SNAKE/all-BOT (3 of each strategy, 180 picks): draft `COMPLETE`, every BOT satisfied `K<=1, DEF<=1, QB<=2, TE<=2`, and **every BOT could field a valid starting lineup**. QB1-only: 8, QB2: 4; TE1-only: 5, TE2: 7; every QB2/TE2 case verified its first pick at that position was non-elite-or-null-rank and its backup was selected no earlier than round 10. Per-strategy average roster shapes (representative verification output, not a permanent product contract):
+
+```text
+BALANCED:  QB 1.33  RB 5.00  WR 5.00  TE 1.67  K 1  DEF 1
+RB_HEAVY:  QB 1.33  RB 6.67  WR 3.67  TE 1.33  K 1  DEF 1
+WR_HEAVY:  QB 1.33  RB 4.67  WR 5.33  TE 1.67  K 1  DEF 1
+HERO_RB:   QB 1.33  RB 3.67  WR 6.33  TE 1.67  K 1  DEF 1
+```
+
+Directional differentiation (RB_HEAVY > WR_HEAVY on RB; WR_HEAVY > RB_HEAVY on WR; HERO_RB clearly distinct from BALANCED) was achieved with no constant tuning after the frozen bands were implemented.
+
+20-team/15-round/SNAKE/all-BOT stress simulation (300 picks, real-dev-mirrored supply K=43/DEF=32): draft `COMPLETE`, every BOT `K<=1`/`DEF<=1`, every BOT could field a valid starting lineup, total K consumption = 20, total DEF consumption = 20, zero `K2`/`DEF2` anywhere — scoped explicitly to the all-BOT case, not generalized to mixed leagues.
+
+**Determinism:** two independent 4-team/15-round/60-pick runs from identical initial state produced an identical `(pickNumber, draftSlot, playerFullName, botStrategy)` sequence. No randomness exists anywhere in the selector or in strategy assignment.
+
+**No schema changes beyond `botStrategy`.** No lineup-slot table, no `PickSource`, no strategy-selection API/UI, no bot-pacing change, no Socket.IO protocol change.
+
 ## Data model
 
 Prisma schema, roughly:
 
 - **User** — id, email, name, image, emailVerified, Auth.js relations, domain relations
 - **League** — id, name, ownerId, rosterSize, teamCount, inviteCode, timerSeconds, scoringFormat (`STANDARD | PPR | HALF_PPR`), draftType (`SNAKE | LINEAR`)
-- **LeagueMember** — id, leagueId, userId (nullable), draftSlot (int, 1-indexed), participantType (`HUMAN | LeagueMemberType.BOT`, default `HUMAN`), displayName (nullable, BOT-only). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`; a hand-written `CHECK` constraint (Phase 5.1, not expressible via Prisma's schema DSL) enforces `HUMAN ⇔ (userId set, displayName null)` and `BOT ⇔ (userId null, displayName set)` — a bot has no `User` row at all
+- **LeagueMember** — id, leagueId, userId (nullable), draftSlot (int, 1-indexed), participantType (`HUMAN | LeagueMemberType.BOT`, default `HUMAN`), displayName (nullable, BOT-only), botStrategy (nullable, BOT-only; Phase 5.6, `BotStrategy` enum). Unique on `(leagueId, userId)` and `(leagueId, draftSlot)`; a hand-written `CHECK` constraint (Phase 5.1, extended in Phase 5.6, not expressible via Prisma's schema DSL) enforces `HUMAN ⇔ (userId set, displayName null, botStrategy null)` and `BOT ⇔ (userId null, displayName set, botStrategy set)` — a bot has no `User` row at all
 - **Player** — id, sleeperId, fullName, position, nflTeam, searchRank, injuryStatus
 - **PlayerAdp** — id, playerId, format, adp (float, nullable), source. Unique on `(playerId, format)`
 - **Draft** — id, leagueId, status (`PENDING | ACTIVE | PAUSED | COMPLETE`), currentPickNumber, currentMemberId (FK → `LeagueMember.id`, `onDelete: SetNull`; Phase 5.1: renamed from `currentUserId`, which FK'd to `User.id`), turnDeadline, startedAt, completedAt
@@ -2292,6 +2650,8 @@ Prisma schema, roughly:
 - **SocketTicket** — id, token (unique), userId, expiresAt, consumedAt, createdAt; belongs to User with `ON DELETE CASCADE` — always a real human; bots never mint or need a SocketTicket
 
 `LeagueMemberType` enum: `HUMAN | BOT` (Phase 5.1).
+
+`BotStrategy` enum: `BALANCED | RB_HEAVY | WR_HEAVY | HERO_RB` (Phase 5.6) — non-null only for `BOT` rows.
 
 Auth.js persistence is modeled with `Account`, `Session`, and `VerificationToken` alongside the domain models above. Authentication is OAuth-only for now, with no password field on `User`. The app uses `User.name` as the canonical user-facing name field.
 
@@ -2473,7 +2833,7 @@ Milestones:
 
 **Phase 4 exit criteria satisfied.** Phase 4 is frozen as a completed foundation the same way Phases 2 and 3 were, unless a later phase exposes a concrete defect.
 
-**Phase 5 — Bot Managers + Mock Drafts — IN PROGRESS.** Renumbered into this slot from the original planning document (which called this slot "Hardening" — see below, now Phase 6); Phase 5 is committed, scoped, and underway, not a future-roadmap idea. Goal: server-owned bot draft participants — never fake Auth.js/OAuth `User` identities — that can occupy draft slots and eventually pick players, building toward mock drafts that fill empty League slots with bots.
+**Phase 5 — Bot Managers + Mock Drafts — COMPLETE.** Renumbered into this slot from the original planning document (which called this slot "Hardening" — see below, now Phase 6); Phase 5 was committed, scoped, and delivered in full, not a future-roadmap idea. Goal: server-owned bot draft participants — never fake Auth.js/OAuth `User` identities — that occupy draft slots, pick players with roster-aware and lineup-aware judgment, and support product-accessible mock drafts filling empty League slots with bots.
 
 Milestones:
 - **5.1 Bot Membership / Participant Data Model — COMPLETE**
@@ -2481,15 +2841,31 @@ Milestones:
 - **5.3 Server-Side Bot Turn Orchestration — COMPLETE**
 - **5.4 Mock Draft Creation / Fill Empty Slots with Bots — COMPLETE**
 - **5.5 Position-Aware Bot Strategy — COMPLETE**
-- **5.6 Bot Strategy Variants + Phase 5 Closeout — NEXT**
+- **5.6 Lineup-Aware Bot Strategy Variants + Phase 5 Closeout — COMPLETE**
 
-Milestone 5.1 delivered the unified HUMAN/BOT `LeagueMember` participant model, the `User.id`-vs-`LeagueMember.id` identity split, the `Draft.currentUserId`→`currentMemberId` and `Pick.userId`→`Pick.leagueMemberId` migration, and normalized HUMAN/BOT member DTOs. Milestone 5.2 extracted the deterministic BEST_AVAILABLE player-selection primitive (`selectBestAvailablePlayerId`, `packages/database/src/drafts/player-selection.ts`) out of the previously-private autopick selector, correcting it to use the same rostered-player eligibility pool as the human Available Players UI and to break exact-ADP ties deterministically, and wired human timer-expiry autopick (`processExpiredDraftTurn`) to call it — decision logic only, no execution path. Milestone 5.3 built that execution path: the existing socket-server turn sweep gained a second phase (`runBotTurnSweep`) that discovers `ACTIVE`/BOT-current Drafts by `participantType` alone (never by `turnDeadline`) and processes exactly one BOT pick per league per tick through a new `processBotDraftTurn` service, reusing the identical `applyPick`/broadcast path every other pick source already uses; `processExpiredDraftTurn` gained the authoritative post-lock guard that makes it safe for BOT and HUMAN turns to share one sweep with no race. Milestone 5.4 closed the product-accessibility gap those three left open: `fillOpenLeagueSlotsWithBots`/`removeBotLeagueMembers` (`apps/web/lib/leagues/`) let a commissioner fill open draft slots with BOT `LeagueMember`s (or clear them) directly from the pre-draft page, pre-Draft only, through the same League-row-lock pattern every other commissioner mutation uses; a **"Manage draft order"** link makes the already-correct-with-no-changes `reorderLeagueMembers` service discoverable from that same page, so a commissioner can move themselves off slot 1 before starting. Milestone 5.5 replaced pure BEST_AVAILABLE for BOT turns with a new, internal `selectPositionAwareBotPlayerId` (`packages/database/src/drafts/position-aware-selection.ts`, not exported from `@fdm/database`'s public entry point) — soft, additive positional-ownership penalties for QB/TE/RB/WR plus an explicit product decision strongly deferring K/DEF to the final 3 rounds — while human timer-expiry autopick keeps calling the original, completely unmodified `selectBestAvailablePlayerId`. See "Current implementation status," "Settled decisions," "Bot fill/remove conventions," and "Bot position-aware strategy conventions" for full detail.
+Milestone 5.1 delivered the unified HUMAN/BOT `LeagueMember` participant model, the `User.id`-vs-`LeagueMember.id` identity split, the `Draft.currentUserId`→`currentMemberId` and `Pick.userId`→`Pick.leagueMemberId` migration, and normalized HUMAN/BOT member DTOs. Milestone 5.2 extracted the deterministic BEST_AVAILABLE player-selection primitive (`selectBestAvailablePlayerId`, `packages/database/src/drafts/player-selection.ts`) out of the previously-private autopick selector, correcting it to use the same rostered-player eligibility pool as the human Available Players UI and to break exact-ADP ties deterministically, and wired human timer-expiry autopick (`processExpiredDraftTurn`) to call it — decision logic only, no execution path. Milestone 5.3 built that execution path: the existing socket-server turn sweep gained a second phase (`runBotTurnSweep`) that discovers `ACTIVE`/BOT-current Drafts by `participantType` alone (never by `turnDeadline`) and processes exactly one BOT pick per league per tick through a new `processBotDraftTurn` service, reusing the identical `applyPick`/broadcast path every other pick source already uses; `processExpiredDraftTurn` gained the authoritative post-lock guard that makes it safe for BOT and HUMAN turns to share one sweep with no race. Milestone 5.4 closed the product-accessibility gap those three left open: `fillOpenLeagueSlotsWithBots`/`removeBotLeagueMembers` (`apps/web/lib/leagues/`) let a commissioner fill open draft slots with BOT `LeagueMember`s (or clear them) directly from the pre-draft page, pre-Draft only, through the same League-row-lock pattern every other commissioner mutation uses; a **"Manage draft order"** link makes the already-correct-with-no-changes `reorderLeagueMembers` service discoverable from that same page, so a commissioner can move themselves off slot 1 before starting. Milestone 5.5 replaced pure BEST_AVAILABLE for BOT turns with a new, internal `selectPositionAwareBotPlayerId` (`packages/database/src/drafts/position-aware-selection.ts`, not exported from `@fdm/database`'s public entry point) — soft, additive positional-ownership penalties for QB/TE/RB/WR plus an explicit product decision strongly deferring K/DEF to the final 3 rounds — while human timer-expiry autopick keeps calling the original, completely unmodified `selectBestAvailablePlayerId`. Milestone 5.6 layered universal starting-lineup feasibility and hard onesie-position roster intelligence (`K<=1, DEF<=1, QB<=2, TE<=2`, elite-positional-rank-gated QB2/TE2 backups) underneath that scoring, and introduced four deterministic, persisted strategy variants (`BALANCED`/`RB_HEAVY`/`WR_HEAVY`/`HERO_RB`) that shape only discretionary bench construction on top of it — while human drafting (manual and timer-expiry autopick alike) remains completely untouched by every one of these BOT-only rules. See "Current implementation status," "Settled decisions," "Bot fill/remove conventions," "Bot position-aware strategy conventions," and "Bot lineup-aware strategy conventions" for full detail.
 
-**Phase 5.5 is complete: bots draft with roster-aware judgment, not just accessibility.** A commissioner can legitimately create BOT `LeagueMember`s through the product, optionally remove them, optionally reorder the mixed HUMAN/BOT membership to choose their own draft position, start the resulting league through the unchanged `startDraft`, and have BOT turns processed automatically by the unchanged Phase 5.3 orchestration — and those BOT turns now deprioritize an over-stocked position, tolerate deep RB/WR benches, and strongly defer K/DEF until the final 3 rounds, rather than blindly following raw ADP. One real human can now run a full solo mock draft against bots with no fake accounts, no second draft engine, and materially more plausible resulting rosters than pure BEST_AVAILABLE would produce. What Phase 5 has left is closeout: strategy variants and a final Phase 5 audit (5.6).
+**Phase 5 is complete: bots draft with roster-aware judgment, hard lineup intelligence, and persisted strategy variety, not just accessibility.** A commissioner can legitimately create BOT `LeagueMember`s through the product, optionally remove them, optionally reorder the mixed HUMAN/BOT membership to choose their own draft position, start the resulting league through the unchanged `startDraft`, and have BOT turns processed automatically by the unchanged Phase 5.3 orchestration. Those BOT turns deprioritize an over-stocked position, tolerate deep RB/WR benches, strongly defer K/DEF until the final 3 rounds, obey hard onesie caps, gate a QB2/TE2 backup behind an elite-rank-plus-late-window rule, protect their own ability to field a complete starting lineup by the end of the draft, and follow one of four deterministic strategy variants that shape their discretionary bench construction — all verified at 12-team and 20-team simulation scale and against real seeded dev data. One real human can now run a full solo mock draft against bots with no fake accounts, no second draft engine, and materially more plausible, more varied resulting rosters than pure BEST_AVAILABLE would produce.
 
 *Done when: 5.1–5.6 are complete — a mock draft can be created, filled with bots, and drafted to completion with the same server-authoritative correctness guarantees as an all-human draft.*
 
-Phase 5 is not complete; Milestones 5.1–5.5 have shipped.
+**Phase 5 exit criteria satisfied.** All six milestones (5.1–5.6) are complete, and Phase 5 is frozen as a completed foundation the same way Phases 2, 3, and 4 were, unless a later phase exposes a concrete defect.
+
+### Phase 5 closeout
+
+Phase 5 is complete because:
+
+- BOT participant identity exists, with no fake Auth.js/OAuth identity ever created for a bot (5.1)
+- BOT `LeagueMember`s can be created and removed through the product, commissioner-only and pre-Draft only (5.4)
+- BOT turns are server-driven, restart-safe, and zero-client, through the same locked-transaction/`applyPick`/broadcast path every other pick source uses (5.3)
+- BOT drafting is position-aware, deprioritizing over-stocked positions and deferring K/DEF timing (5.5)
+- BOTs additionally preserve their own ability to field a complete, valid starting lineup whenever the underlying player pool allows it, via a universal hard onesie-cap/elite-backup/feasibility layer (5.6)
+- four deterministic strategy variants exist, are persisted per-`LeagueMember`, and are assigned with no randomness (5.6)
+- mixed-strategy mock drafts complete correctly at both 12-team and 20-team scale, verified by automated simulation and real-dev-database verification
+- HUMAN drafting (manual picks and timer-expiry autopick) remains deliberately, verifiably separate from every BOT-only rule introduced across 5.1–5.6
+- restart/concurrency correctness established in earlier milestones is unchanged
+- full workspace test/typecheck/build all pass
+- real mock-draft behavior was verified acceptable against real seeded data, not only synthetic fixtures
 
 **Phase 6 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.
 *Done when: CI is green and two socket instances run safely against one Redis.*

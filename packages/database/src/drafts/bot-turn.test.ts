@@ -341,6 +341,85 @@ describe("processBotDraftTurn", () => {
   });
 });
 
+// Phase 5.6, final corrections item 3: documents the exact boundary of what
+// BOT hard caps/feasibility guarantee. Hard 1-per-BOT K/DEF caps only
+// guarantee BOTs cannot starve *each other* — a HUMAN is never subject to
+// onesie caps (see the autopick.test.ts separation tests) and may freely
+// deplete a shared position's entire supply. This is not a bug BOT
+// strategy should try to work around: no reservation/reclaim mechanism
+// exists or should be added, and the draft must simply continue via the
+// existing impossible-lineup fallback.
+describe("mixed HUMAN/BOT scarcity (impossible-lineup fallback boundary)", () => {
+  beforeEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  afterEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  it("a HUMAN depleting the entire DEF supply does not relax BOT hard caps, trigger reservation, or halt the draft", async () => {
+    const owner = await createTestUser();
+    const league = await createTestLeague(owner.id, { teamCount: 2, rosterSize: 15 });
+    const humanMembership = await prisma.leagueMember.create({
+      data: { leagueId: league.id, userId: owner.id, draftSlot: 1 },
+    });
+    const bot = await createTestBotMember(league.id, 2);
+    const draft = await prisma.draft.create({
+      data: { leagueId: league.id, status: "ACTIVE", currentPickNumber: 1, currentMemberId: bot.id },
+    });
+
+    // The entire league's DEF supply is exactly one player, already
+    // consumed by the HUMAN — real HUMAN-caused scarcity, not a bot bug.
+    const theOnlyDef = await createTestPlayer({ nflTeam: "KC", position: "DEF" });
+    await prisma.pick.create({
+      data: { draftId: draft.id, leagueMemberId: humanMembership.id, playerId: theOnlyDef.id, pickNumber: 1 },
+    });
+
+    // Give the BOT a roster shape with everything except DEF, 1 pick
+    // remaining (14 of 15 made) — the exact shape that would ordinarily
+    // force lineup feasibility to insist on a DEF pick right now.
+    let pickNumber = 2;
+    async function botDrafts(position: string) {
+      const player = await createTestPlayer({ nflTeam: "KC", position, fullName: `Bot ${position} ${pickNumber}` });
+      await prisma.pick.create({ data: { draftId: draft.id, leagueMemberId: bot.id, playerId: player.id, pickNumber } });
+      pickNumber += 1;
+    }
+    await botDrafts("QB");
+    for (let i = 0; i < 6; i++) await botDrafts("RB");
+    for (let i = 0; i < 5; i++) await botDrafts("WR");
+    await botDrafts("TE");
+    await botDrafts("K");
+    // 1 (QB) + 6 (RB) + 5 (WR) + 1 (TE) + 1 (K) = 14 picks made.
+    await prisma.draft.update({ where: { id: draft.id }, data: { currentPickNumber: pickNumber } });
+
+    const onlyRemainingCandidate = await createTestPlayer({ nflTeam: "KC", position: "RB", fullName: "Last RB" });
+    await prisma.playerAdp.create({
+      data: { playerId: onlyRemainingCandidate.id, format: league.scoringFormat, adp: 1, source: "test" },
+    });
+
+    const outcome = await processBotDraftTurn(league.id);
+
+    // The draft continues — no BotPickExhaustedError, no deadlock — via the
+    // impossible-lineup fallback (no feasible candidate exists because no
+    // DEF exists to be feasible about, so the fallback widens to the full
+    // onesie-eligible set and picks the best remaining strategy candidate).
+    expect(outcome.outcome).toBe("picked");
+    if (outcome.outcome !== "picked") throw new Error("unreachable");
+    expect(outcome.result.pick.playerId).toBe(onlyRemainingCandidate.id);
+
+    // No DEF was fabricated, reserved, or reclaimed from the human — DEF
+    // supply-wide is still exactly the one HUMAN-owned pick.
+    const defPickCount = await prisma.pick.count({
+      where: { draftId: draft.id, player: { position: "DEF" } },
+    });
+    expect(defPickCount).toBe(1);
+    expect((await prisma.pick.findFirst({ where: { draftId: draft.id, player: { position: "DEF" } } }))?.leagueMemberId).toBe(
+      humanMembership.id,
+    );
+  });
+});
+
 describe("findActiveBotTurnLeagueIds", () => {
   beforeEach(async () => {
     await cleanupLeagueTestData();

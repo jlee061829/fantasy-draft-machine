@@ -84,11 +84,16 @@ export async function processBotDraftTurn(leagueId: string): Promise<BotTurnOutc
 
     const currentMember = await tx.leagueMember.findUniqueOrThrow({
       where: { id: draft.currentMemberId },
-      select: { participantType: true },
+      select: { participantType: true, botStrategy: true },
     });
     if (currentMember.participantType !== "BOT") {
       return { outcome: "skipped", leagueId, reason: "NOT_BOT_TURN" };
     }
+    // Enforced by the Phase 5.6 participant-shape CHECK constraint: every
+    // BOT row has a non-null botStrategy. findUniqueOrThrow above already
+    // guarantees the row exists; this is purely a type-narrowing assertion,
+    // not a runtime possibility this code needs to handle gracefully.
+    const botStrategy = currentMember.botStrategy!;
 
     const league = await tx.league.findUniqueOrThrow({
       where: { id: leagueId },
@@ -108,6 +113,7 @@ export async function processBotDraftTurn(leagueId: string): Promise<BotTurnOutc
       rosterSize: league.rosterSize,
       currentPickNumber: draft.currentPickNumber,
       teamCount: league.teamCount,
+      botStrategy,
     });
     if (!playerId) {
       throw new BotPickExhaustedError(

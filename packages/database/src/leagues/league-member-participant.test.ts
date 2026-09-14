@@ -184,6 +184,58 @@ describe("LeagueMember participant-shape invariants", () => {
     });
   });
 
+  // Phase 5.6: the same participant-shape CHECK constraint was widened (not
+  // replaced) to additionally require botStrategy IS NOT NULL for BOT rows
+  // and IS NULL for HUMAN rows. See the 20260914120000_add_bot_strategy
+  // migration for the exact predicate and its historical backfill.
+  describe("Phase 5.6 botStrategy shape rejected by the widened participant-shape CHECK constraint", () => {
+    it("rejects BOT with a null botStrategy", async () => {
+      const owner = await createTestUser();
+      const league = await createTestLeague(owner.id);
+
+      await expect(
+        prisma.leagueMember.create({
+          data: {
+            leagueId: league.id,
+            draftSlot: 1,
+            participantType: "BOT",
+            userId: null,
+            displayName: "CPU 1",
+            botStrategy: null,
+          },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects HUMAN with a non-null botStrategy", async () => {
+      const owner = await createTestUser();
+      const league = await createTestLeague(owner.id);
+
+      await expect(
+        prisma.leagueMember.create({
+          data: {
+            leagueId: league.id,
+            draftSlot: 1,
+            participantType: "HUMAN",
+            userId: owner.id,
+            botStrategy: "BALANCED",
+          },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("accepts every valid BotStrategy value for a BOT row", async () => {
+      const owner = await createTestUser();
+      const league = await createTestLeague(owner.id, 4);
+      const strategies = ["BALANCED", "RB_HEAVY", "WR_HEAVY", "HERO_RB"] as const;
+
+      for (const [index, strategy] of strategies.entries()) {
+        const bot = await createTestBotMember(league.id, index + 1, { botStrategy: strategy });
+        expect(bot.botStrategy).toBe(strategy);
+      }
+    });
+  });
+
   describe("unrelated invariants remain unaffected by the participant-shape change", () => {
     it("still rejects a duplicate human membership via @@unique([leagueId, userId])", async () => {
       const owner = await createTestUser();

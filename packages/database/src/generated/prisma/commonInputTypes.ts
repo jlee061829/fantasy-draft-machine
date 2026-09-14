@@ -230,6 +230,13 @@ export type EnumLeagueMemberTypeFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel> | $Enums.LeagueMemberType
 }
 
+export type EnumBotStrategyNullableFilter<$PrismaModel = never> = {
+  equals?: $Enums.BotStrategy | Prisma.EnumBotStrategyFieldRefInput<$PrismaModel> | null
+  in?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumBotStrategyNullableFilter<$PrismaModel> | $Enums.BotStrategy | null
+}
+
 export type EnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.LeagueMemberType | Prisma.EnumLeagueMemberTypeFieldRefInput<$PrismaModel>
   in?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
@@ -238,6 +245,16 @@ export type EnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
+}
+
+export type EnumBotStrategyNullableWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.BotStrategy | Prisma.EnumBotStrategyFieldRefInput<$PrismaModel> | null
+  in?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumBotStrategyNullableWithAggregatesFilter<$PrismaModel> | $Enums.BotStrategy | null
+  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumBotStrategyNullableFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumBotStrategyNullableFilter<$PrismaModel>
 }
 
 export type FloatNullableFilter<$PrismaModel = never> = {
@@ -526,6 +543,13 @@ export type NestedEnumLeagueMemberTypeFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel> | $Enums.LeagueMemberType
 }
 
+export type NestedEnumBotStrategyNullableFilter<$PrismaModel = never> = {
+  equals?: $Enums.BotStrategy | Prisma.EnumBotStrategyFieldRefInput<$PrismaModel> | null
+  in?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumBotStrategyNullableFilter<$PrismaModel> | $Enums.BotStrategy | null
+}
+
 export type NestedEnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.LeagueMemberType | Prisma.EnumLeagueMemberTypeFieldRefInput<$PrismaModel>
   in?: $Enums.LeagueMemberType[] | Prisma.ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel>
@@ -534,6 +558,16 @@ export type NestedEnumLeagueMemberTypeWithAggregatesFilter<$PrismaModel = never>
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumLeagueMemberTypeFilter<$PrismaModel>
+}
+
+export type NestedEnumBotStrategyNullableWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.BotStrategy | Prisma.EnumBotStrategyFieldRefInput<$PrismaModel> | null
+  in?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  notIn?: $Enums.BotStrategy[] | Prisma.ListEnumBotStrategyFieldRefInput<$PrismaModel> | null
+  not?: Prisma.NestedEnumBotStrategyNullableWithAggregatesFilter<$PrismaModel> | $Enums.BotStrategy | null
+  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumBotStrategyNullableFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumBotStrategyNullableFilter<$PrismaModel>
 }
 
 export type NestedFloatNullableWithAggregatesFilter<$PrismaModel = never> = {

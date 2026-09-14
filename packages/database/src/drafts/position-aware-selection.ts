@@ -1,50 +1,64 @@
+import {
+  computeStrategyPositionPenalty,
+  isCandidateOnesieEligible,
+  STARTING_LINEUP_TOTAL,
+  wouldSelectionPreserveLineupFeasibility,
+  type BotStrategy,
+} from "@fdm/shared";
 import type { Prisma, ScoringFormat } from "../generated/prisma/client.js";
+import { getPositionalAdpRank } from "./positional-adp-rank.js";
 
-// Phase 5.5: the BOT-only counterpart to selectBestAvailablePlayerId
+// Phase 5.5/5.6: the BOT-only counterpart to selectBestAvailablePlayerId
 // (player-selection.ts). Deliberately a *separate* function rather than a
 // modification of that one: human timer-expiry autopick
 // (processExpiredDraftTurn) keeps calling selectBestAvailablePlayerId
 // completely unchanged, so a human who misses their deadline still gets
 // pure BEST_AVAILABLE, never these roster-building heuristics. Only
-// processBotDraftTurn calls this function. See CLAUDE.md's Phase 5.5 notes
-// (once written) for the full rationale; the short version: a human's
-// missed deadline and a bot's own intentional pick are different events,
-// and wasAutopick's existing meaning ("timer expired") shouldn't start
-// silently reflecting strategy no human chose.
+// processBotDraftTurn calls this function.
 //
 // This is deliberately module-internal, not exported from
-// packages/database/src/index.ts. Unlike selectBestAvailablePlayerId (read-
-// only, safe to expose), this function is an implementation detail of BOT
-// turn processing specifically — processBotDraftTurn remains the one safe,
-// public, high-level entry point apps/socket-server is allowed to call.
+// packages/database/src/index.ts. Unlike selectBestAvailablePlayerId
+// (read-only, safe to expose), this function is an implementation detail
+// of BOT turn processing specifically — processBotDraftTurn remains the
+// one safe, public, high-level entry point apps/socket-server is allowed
+// to call.
 //
-// Read-only, exactly like selectBestAvailablePlayerId: never writes a Pick,
-// never touches Draft, owns no part of the transactional correctness
-// boundary itself. Callers (today: only processBotDraftTurn) are
-// responsible for running it inside the same locked transaction that will
-// go on to call applyPick with the returned playerId.
+// Read-only: never writes a Pick, never touches Draft, owns no part of the
+// transactional correctness boundary itself. Callers (today: only
+// processBotDraftTurn) are responsible for running it inside the same
+// locked transaction that will go on to call applyPick with the returned
+// playerId.
 //
 // Eligibility is unchanged from Phase 5.2: undrafted (in this draftId),
-// rostered (Player.nflTeam IS NOT NULL) players only — the same pool the
-// Available Players UI and selectBestAvailablePlayerId both use. This
-// milestone does not broaden or narrow that pool; it only changes *which*
-// eligible candidate wins.
+// rostered (Player.nflTeam IS NOT NULL) players only.
 //
-// Strategy: `adjustedScore = baseValue + positionPenalty`, lower wins.
-// baseValue is the candidate's own ADP (when a non-null ADP row exists for
-// the league's scoringFormat) or searchRank (fallback). positionPenalty is
-// a small additive nudge based on how many Picks this specific BOT
-// (leagueMemberId) already owns at that position in this draft, plus (as of
-// the K/DEF timing-rule product decision below) a round-aware timing
-// component for K/DEF specifically — never a hard exclusion, so a
-// sufficiently large raw value gap can still overcome it. Tier precedence
-// from Phase 5.2 is preserved exactly: every candidate with a usable ADP
-// for this format outranks every candidate without one, regardless of
-// position penalties on either side — position-awareness only reorders
-// candidates *within* a tier. This is a deliberately conservative
-// compatibility decision: it keeps Phase 5.2's existing "ADP beats no-ADP,
-// always" guarantee intact rather than inventing a cross-tier ADP/searchRank
-// unit conversion, which would itself be an unjustified magic number.
+// Frozen Phase 5.6 pipeline (see CLAUDE.md's Phase 5.6 notes once written):
+//
+//   1. load raw eligible candidates (undrafted, rostered)
+//   2. hard onesie eligibility (K<=1, DEF<=1, QB<=2, TE<=2, elite/backup-
+//      window-gated QB2/TE2) — a candidate that fails this is REMOVED from
+//      the pool entirely, never merely penalized. Universal across every
+//      strategy; strategy is never consulted here.
+//   3. starting-lineup feasibility — a candidate is removed if selecting it
+//      would leave too few remaining picks to still complete the starting
+//      lineup. Bypassed entirely when rosterSize < STARTING_LINEUP_TOTAL
+//      (the fixed lineup cannot mathematically fit at all — see the
+//      "small-roster fallback" test coverage). If feasibility filtering
+//      would otherwise remove every onesie-eligible candidate, it falls
+//      back to the full onesie-eligible set rather than onesie-ineligible
+//      candidates — onesie rules are never relaxed by this fallback.
+//   4. strategy scoring: adjustedScore = baseValue (ADP or searchRank) +
+//      strategy-specific position penalty, lower wins. Tier precedence from
+//      Phase 5.2 is preserved exactly: every candidate with a usable ADP
+//      for this format outranks every candidate without one.
+//
+// If step 1 finds raw candidates but step 2 (onesie eligibility) removes
+// every one of them, this function returns null — not because the raw
+// player pool is exhausted, but because no BOT-strategy-eligible candidate
+// remains under the universal hard roster rules. The caller
+// (processBotDraftTurn) treats this identically to true pool exhaustion
+// (BotPickExhaustedError) unless/until a concrete need for a distinct
+// error is shown.
 export async function selectPositionAwareBotPlayerId(
   tx: Prisma.TransactionClient,
   params: {
@@ -54,43 +68,59 @@ export async function selectPositionAwareBotPlayerId(
     rosterSize: number;
     currentPickNumber: number;
     teamCount: number;
+    botStrategy: BotStrategy;
   },
 ): Promise<string | null> {
-  const { draftId, leagueMemberId, scoringFormat, rosterSize, currentPickNumber, teamCount } = params;
+  const { draftId, leagueMemberId, scoringFormat, rosterSize, currentPickNumber, teamCount, botStrategy } = params;
 
-  // Round-awareness (product decision, post-5.5): K/DEF are strongly
-  // discouraged everywhere except the final 3 rounds of the *League's own*
-  // rosterSize, not a hardcoded 15 — rosterSize remains fully dynamic (see
-  // CLAUDE.md's rosterSize conventions), so this formula, not a literal
-  // round number, is what stays correct for historical non-15 leagues and
-  // internal test fixtures alike. `Math.max(1, ...)` guards a pathologically
-  // small rosterSize (e.g. an internal test fixture) from producing a
-  // zero/negative lateWindowStart.
+  // Round-awareness, unchanged from 5.5: K/DEF timing and the QB/TE backup
+  // window both derive from the League's own rosterSize, never a
+  // hardcoded 15, so historical non-15 leagues and internal test fixtures
+  // compute correctly-scaled windows with no special-casing.
   const roundNumber = Math.ceil(currentPickNumber / teamCount);
   const lateWindowStart = Math.max(1, rosterSize - 2);
   const isLateWindow = roundNumber >= lateWindowStart;
 
-  // Roster position counts for *this* BOT only. Keyed by leagueMemberId,
-  // never userId (a BOT has none) — matches the Phase 5.1
-  // deriveTeamRosters/team-roster-helpers.ts convention exactly. Other
-  // members' Picks are never read here, so they structurally cannot affect
-  // this BOT's own position penalties.
+  // Roster position counts and total pick count for *this* BOT only,
+  // keyed by leagueMemberId, never userId (a BOT has none). Other members'
+  // Picks are never read here, so they structurally cannot affect this
+  // BOT's own penalties, onesie eligibility, or feasibility math.
   const ownedPicks = await tx.pick.findMany({
     where: { draftId, leagueMemberId },
-    select: { player: { select: { position: true } } },
+    select: { player: { select: { id: true, position: true } } },
   });
   const ownedCounts: Record<string, number> = {};
   for (const pick of ownedPicks) {
     ownedCounts[pick.player.position] = (ownedCounts[pick.player.position] ?? 0) + 1;
   }
+  const remainingPicksIncludingThisOne = rosterSize - ownedPicks.length;
+
+  // Positional ADP rank is only meaningful — and only ever computed — for
+  // an owned QB/TE when the BOT owns exactly one, per the frozen design
+  // ("the selector does not need to compute the rank of every candidate").
+  // At most two extra queries per BOT turn, never one per candidate.
+  let ownedQbPositionalRank: number | null = null;
+  if (ownedCounts.QB === 1) {
+    const ownedQb = ownedPicks.find((pick) => pick.player.position === "QB")!;
+    ownedQbPositionalRank = await getPositionalAdpRank(tx, {
+      playerId: ownedQb.player.id,
+      position: "QB",
+      scoringFormat,
+    });
+  }
+  let ownedTePositionalRank: number | null = null;
+  if (ownedCounts.TE === 1) {
+    const ownedTe = ownedPicks.find((pick) => pick.player.position === "TE")!;
+    ownedTePositionalRank = await getPositionalAdpRank(tx, {
+      playerId: ownedTe.player.id,
+      position: "TE",
+      scoringFormat,
+    });
+  }
 
   // The full eligible candidate pool in one query, scored entirely in
-  // TypeScript rather than a bounded top-N window. At most ~1,068 rostered
-  // Players exist in the current seeded pool (see CLAUDE.md), and it only
-  // shrinks as a draft progresses — small enough that a bounded window
-  // would introduce a real correctness risk (the true best-fit candidate
-  // for this BOT's needs could sit just outside an arbitrary cutoff) for no
-  // performance benefit worth having.
+  // TypeScript rather than a bounded top-N window — see Phase 5.5's
+  // reasoning (still applicable; the pool has not grown).
   const candidates = await tx.player.findMany({
     where: { nflTeam: { not: null }, picks: { none: { draftId } } },
     select: {
@@ -101,94 +131,49 @@ export async function selectPositionAwareBotPlayerId(
     },
   });
 
-  type ScoredCandidate = {
-    id: string;
-    adp: number | null;
-    searchRank: number | null;
-    penalty: number;
-  };
-
-  const scored: ScoredCandidate[] = candidates.map((candidate) => ({
+  type Candidate = { id: string; position: string; adp: number | null; searchRank: number | null };
+  const rawCandidates: Candidate[] = candidates.map((candidate) => ({
     id: candidate.id,
+    position: candidate.position,
     adp: candidate.adp[0]?.adp ?? null,
     searchRank: candidate.searchRank,
-    penalty: computePositionPenalty(
-      candidate.position,
-      ownedCounts[candidate.position] ?? 0,
-      isLateWindow,
-    ),
+  }));
+
+  // Step 2: hard onesie eligibility. Universal across every strategy — no
+  // strategy parameter is passed to this function.
+  const onesieEligible = rawCandidates.filter((candidate) =>
+    isCandidateOnesieEligible({
+      position: candidate.position,
+      ownedCounts,
+      ownedQbPositionalRank,
+      ownedTePositionalRank,
+      roundNumber,
+      rosterSize,
+    }),
+  );
+
+  // Step 3: starting-lineup feasibility, with the small-roster bypass and
+  // the impossible-lineup fallback. Onesie-ineligible candidates are never
+  // reconsidered here or below — the fallback only ever widens back to
+  // `onesieEligible`, never to `rawCandidates`.
+  let feasibilityPool: Candidate[];
+  if (rosterSize < STARTING_LINEUP_TOTAL) {
+    feasibilityPool = onesieEligible;
+  } else {
+    const feasible = onesieEligible.filter((candidate) =>
+      wouldSelectionPreserveLineupFeasibility(ownedCounts, candidate.position, remainingPicksIncludingThisOne),
+    );
+    feasibilityPool = feasible.length > 0 ? feasible : onesieEligible;
+  }
+
+  type ScoredCandidate = Candidate & { penalty: number };
+  const scored: ScoredCandidate[] = feasibilityPool.map((candidate) => ({
+    ...candidate,
+    penalty: computeStrategyPositionPenalty(botStrategy, candidate.position, ownedCounts, isLateWindow),
   }));
 
   scored.sort(compareCandidates);
   return scored[0]?.id ?? null;
-}
-
-// Soft, additive, never-absolute penalties (in ADP/searchRank-point-
-// equivalent units — both scales are roughly "overall player rank," so one
-// additive constant is meaningful against either). Bands start at the
-// *second* owned player at a position (a first QB/TE draws no penalty at
-// all), since real ADP data shows a single early QB/TE is completely
-// ordinary. RB/WR bands are deliberately much lighter than QB/TE, since
-// real rosters commonly carry several of each. These four bands are
-// unchanged since the initial Phase 5.5 calibration; treat any future
-// change to them as a deliberate, evidence-based decision (backed by
-// simulation output), never a silent tuning pass to make a test happen to
-// pass.
-//
-// K/DEF (post-5.5 product decision): initially shipped with no penalty at
-// all, on the finding that real seeded ADP already places them late enough
-// on its own. That finding held for *raw* ADP, but the explicit product
-// decision here is stronger than "let ADP fall where it may" — K/DEF should
-// be *strongly discouraged*, not merely mildly deprioritized, before the
-// final 3 rounds, even overriding an attractively low raw ADP. See
-// computeKDefPenalty below.
-function computePositionPenalty(position: string, owned: number, isLateWindow: boolean): number {
-  switch (position) {
-    case "QB":
-      if (owned >= 2) return 60;
-      if (owned === 1) return 18;
-      return 0;
-    case "TE":
-      if (owned >= 2) return 55;
-      if (owned === 1) return 15;
-      return 0;
-    case "RB":
-      if (owned >= 4) return 12;
-      if (owned === 3) return 5;
-      return 0;
-    case "WR":
-      if (owned >= 5) return 12;
-      if (owned === 4) return 5;
-      return 0;
-    case "K":
-    case "DEF":
-      return computeKDefPenalty(owned, isLateWindow);
-    default:
-      // Any unrecognized position value: no penalty.
-      return 0;
-  }
-}
-
-// Two independent, additive components, deliberately kept separate rather
-// than folded into one lookup table:
-//
-//   - timing: +100 before the final 3 rounds, +0 during them. Strong on
-//     purpose — the product goal is "K/DEF picks should be unusual before
-//     the final 3 rounds even at an attractive raw ADP," not merely
-//     "slightly deprioritized." Still additive, not exclusionary: an
-//     extreme enough candidate-pool situation (e.g. every remaining
-//     non-K/DEF candidate has a far worse raw value) can still overcome it.
-//   - duplicate: 0/+40/+80 by how many of that position this BOT already
-//     owns, applied identically inside and outside the late window — a
-//     second K/DEF is discouraged everywhere, just less so once K/DEF
-//     picks are otherwise normal.
-//
-// Both apply to K and DEF identically; there is no K-specific or
-// DEF-specific constant.
-function computeKDefPenalty(owned: number, isLateWindow: boolean): number {
-  const timingPenalty = isLateWindow ? 0 : 100;
-  const duplicatePenalty = owned >= 2 ? 80 : owned === 1 ? 40 : 0;
-  return timingPenalty + duplicatePenalty;
 }
 
 type Candidate = { id: string; adp: number | null; searchRank: number | null; penalty: number };
@@ -198,27 +183,17 @@ function compareId(a: string, b: string): number {
   return a < b ? -1 : 1;
 }
 
-// Explicit, branch-based comparator rather than folding null handling into
-// a single numeric sentinel (e.g. `searchRank ?? Number.MAX_SAFE_INTEGER`):
-// a sentinel that large would make positionPenalty numerically negligible
-// against it, silently defeating position-awareness for exactly the
-// null-searchRank candidates (all DEF rows, notably) it's meant to apply
-// to. Each branch below mirrors Phase 5.2's original NULLS-LAST semantics
-// exactly, with positionPenalty applied only where it stays meaningful
-// relative to the metric it's added to.
+// Unchanged from Phase 5.5: explicit, branch-based comparator rather than
+// folding null handling into a single numeric sentinel.
 function compareCandidates(a: Candidate, b: Candidate): number {
   const aHasAdp = a.adp !== null;
   const bHasAdp = b.adp !== null;
 
-  // Tier precedence (Phase 5.2, preserved): any usable-ADP candidate beats
-  // any no-ADP candidate, unconditionally.
   if (aHasAdp !== bHasAdp) {
     return aHasAdp ? -1 : 1;
   }
 
   if (aHasAdp && bHasAdp) {
-    // Tier 1: adjustedScore, then raw ADP, then searchRank
-    // (non-null-before-null, then ascending), then id.
     const aScore = a.adp! + a.penalty;
     const bScore = b.adp! + b.penalty;
     if (aScore !== bScore) return aScore - bScore;
@@ -233,8 +208,6 @@ function compareCandidates(a: Candidate, b: Candidate): number {
     return compareId(a.id, b.id);
   }
 
-  // Tier 2 (neither has a usable ADP for this format): a real searchRank
-  // always beats a null searchRank, mirroring "NULLS LAST" exactly.
   const aHasRank = a.searchRank !== null;
   const bHasRank = b.searchRank !== null;
   if (aHasRank !== bHasRank) return aHasRank ? -1 : 1;
@@ -247,8 +220,7 @@ function compareCandidates(a: Candidate, b: Candidate): number {
     return compareId(a.id, b.id);
   }
 
-  // Both searchRank null (today: exclusively DEF rows) — nothing left to
-  // rank by except the penalty itself, then id.
   if (a.penalty !== b.penalty) return a.penalty - b.penalty;
   return compareId(a.id, b.id);
 }
+

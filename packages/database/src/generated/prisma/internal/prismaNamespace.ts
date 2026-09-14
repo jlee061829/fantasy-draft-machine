@@ -1428,7 +1428,8 @@ export const LeagueMemberScalarFieldEnum = {
   userId: 'userId',
   draftSlot: 'draftSlot',
   participantType: 'participantType',
-  displayName: 'displayName'
+  displayName: 'displayName',
+  botStrategy: 'botStrategy'
 } as const
 
 export type LeagueMemberScalarFieldEnum = (typeof LeagueMemberScalarFieldEnum)[keyof typeof LeagueMemberScalarFieldEnum]
@@ -1619,6 +1620,20 @@ export type EnumLeagueMemberTypeFieldRefInput<$PrismaModel> = FieldRefInputType<
  * Reference to a field of type 'LeagueMemberType[]'
  */
 export type ListEnumLeagueMemberTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'LeagueMemberType[]'>
+    
+
+
+/**
+ * Reference to a field of type 'BotStrategy'
+ */
+export type EnumBotStrategyFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BotStrategy'>
+    
+
+
+/**
+ * Reference to a field of type 'BotStrategy[]'
+ */
+export type ListEnumBotStrategyFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'BotStrategy[]'>
     
 
 

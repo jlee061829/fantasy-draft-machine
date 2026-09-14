@@ -33,6 +33,16 @@ enum LeagueMemberType {
   BOT
 }
 
+// Phase 5.6: deterministic BOT drafting-strategy variants. Null for every
+// HUMAN LeagueMember; required (non-null) for every BOT LeagueMember — see
+// LeagueMember below for the full extended participant-shape invariant.
+enum BotStrategy {
+  BALANCED
+  RB_HEAVY
+  WR_HEAVY
+  HERO_RB
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -137,6 +147,12 @@ model LeagueMember {
   draftSlot       Int
   participantType LeagueMemberType @default(HUMAN)
   displayName     String?
+  // Phase 5.6: nullable at the schema level (Prisma has no partial-NOT-NULL
+  // syntax), but a hand-written CHECK constraint (see migration
+  // 20260914000000_add_bot_strategy) enforces it is required for BOT rows
+  // and forbidden for HUMAN rows, extending the same participant-shape
+  // invariant introduced in Phase 5.1.
+  botStrategy     BotStrategy?
 
   league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
   user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -42,3 +42,13 @@ export const LeagueMemberType = {
 } as const
 
 export type LeagueMemberType = (typeof LeagueMemberType)[keyof typeof LeagueMemberType]
+
+
+export const BotStrategy = {
+  BALANCED: 'BALANCED',
+  RB_HEAVY: 'RB_HEAVY',
+  WR_HEAVY: 'WR_HEAVY',
+  HERO_RB: 'HERO_RB'
+} as const
+
+export type BotStrategy = (typeof BotStrategy)[keyof typeof BotStrategy]

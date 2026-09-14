@@ -154,7 +154,8 @@ export const LeagueMemberScalarFieldEnum = {
   userId: 'userId',
   draftSlot: 'draftSlot',
   participantType: 'participantType',
-  displayName: 'displayName'
+  displayName: 'displayName',
+  botStrategy: 'botStrategy'
 } as const
 
 export type LeagueMemberScalarFieldEnum = (typeof LeagueMemberScalarFieldEnum)[keyof typeof LeagueMemberScalarFieldEnum]

@@ -11,6 +11,8 @@ import { startDraft } from "../drafts/start-draft";
 import { createLeague } from "./create-league";
 import { fillOpenLeagueSlotsWithBots } from "./fill-bots";
 import { joinLeague } from "./join-league";
+import { removeBotLeagueMembers } from "./remove-bots";
+import { reorderLeagueMembers } from "./reorder-league-members";
 
 async function createTestLeague(ownerId: string, teamCount = 4) {
   return createLeague(
@@ -229,5 +231,120 @@ describe("fillOpenLeagueSlotsWithBots", () => {
     // No duplicate draft slots regardless of which outcome occurred.
     const slots = members.map((m) => m.draftSlot).sort((a, b) => a - b);
     expect(new Set(slots).size).toBe(slots.length);
+  });
+
+  // Phase 5.6: BOT strategy assignment. Fill assigns BALANCED/RB_HEAVY/
+  // WR_HEAVY/HERO_RB deterministically, in the same ascending open-slot
+  // order (and continuing-from-existing-count convention) as the
+  // "CPU N" displayName ordinal already uses.
+  describe("Phase 5.6 botStrategy assignment", () => {
+    it("assigns the BALANCED/RB_HEAVY/WR_HEAVY/HERO_RB rotation in ascending open-slot order", async () => {
+      const owner = await createTestUser();
+      const { league } = await createTestLeague(owner.id, 5);
+
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id);
+
+      const bots = await prisma.leagueMember.findMany({
+        where: { leagueId: league.id, participantType: "BOT" },
+        orderBy: { draftSlot: "asc" },
+      });
+      expect(bots.map((b) => b.botStrategy)).toEqual(["BALANCED", "RB_HEAVY", "WR_HEAVY", "HERO_RB"]);
+    });
+
+    it("every BOT row has a non-null botStrategy; every HUMAN row has a null botStrategy", async () => {
+      const owner = await createTestUser();
+      const { league, membership: ownerMembership } = await createTestLeague(owner.id, 4);
+
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id);
+
+      const members = await prisma.leagueMember.findMany({ where: { leagueId: league.id } });
+      for (const member of members) {
+        if (member.id === ownerMembership.id) {
+          expect(member.participantType).toBe("HUMAN");
+          expect(member.botStrategy).toBeNull();
+        } else {
+          expect(member.participantType).toBe("BOT");
+          expect(member.botStrategy).not.toBeNull();
+        }
+      }
+    });
+
+    it("continues the rotation from the existing BOT count after a partial capacity increase", async () => {
+      const owner = await createTestUser();
+      const { league } = await createTestLeague(owner.id, 4);
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id); // BALANCED, RB_HEAVY, WR_HEAVY
+      await prisma.league.update({ where: { id: league.id }, data: { teamCount: 6 } });
+
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id); // continues: HERO_RB, BALANCED
+
+      const bots = await prisma.leagueMember.findMany({
+        where: { leagueId: league.id, participantType: "BOT" },
+        orderBy: { draftSlot: "asc" },
+      });
+      expect(bots.map((b) => b.botStrategy)).toEqual(["BALANCED", "RB_HEAVY", "WR_HEAVY", "HERO_RB", "BALANCED"]);
+    });
+
+    it("a pre-Draft reorder changes draftSlot but never botStrategy — strategy follows LeagueMember.id", async () => {
+      const owner = await createTestUser();
+      const { league } = await createTestLeague(owner.id, 4);
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id);
+
+      const before = await prisma.leagueMember.findMany({ where: { leagueId: league.id } });
+      const strategyByMembershipId = new Map(before.map((m) => [m.id, m.botStrategy]));
+
+      // Reverse the full order.
+      const reversedIds = [...before].sort((a, b) => b.draftSlot - a.draftSlot).map((m) => m.id);
+      await reorderLeagueMembers(league.id, { memberIds: reversedIds }, owner.id);
+
+      const after = await prisma.leagueMember.findMany({ where: { leagueId: league.id } });
+      expect(after).toHaveLength(before.length);
+      for (const member of after) {
+        expect(member.botStrategy).toBe(strategyByMembershipId.get(member.id));
+      }
+      // Slots actually changed — otherwise this test would prove nothing.
+      const slotsChanged = after.some(
+        (m) => before.find((b) => b.id === m.id)!.draftSlot !== m.draftSlot,
+      );
+      expect(slotsChanged).toBe(true);
+    });
+
+    it("removing all bots deletes their botStrategy rows naturally; a subsequent refill restarts the rotation from BALANCED", async () => {
+      const owner = await createTestUser();
+      const { league } = await createTestLeague(owner.id, 4);
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id); // BALANCED, RB_HEAVY, WR_HEAVY
+
+      const removeResult = await removeBotLeagueMembers(league.id, owner.id);
+      expect(removeResult.botsRemoved).toBe(3);
+      const remainingBots = await prisma.leagueMember.count({
+        where: { leagueId: league.id, participantType: "BOT" },
+      });
+      expect(remainingBots).toBe(0);
+
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id);
+
+      const refilledBots = await prisma.leagueMember.findMany({
+        where: { leagueId: league.id, participantType: "BOT" },
+        orderBy: { draftSlot: "asc" },
+      });
+      expect(refilledBots.map((b) => b.botStrategy)).toEqual(["BALANCED", "RB_HEAVY", "WR_HEAVY"]);
+    });
+
+    it("persisted botStrategy survives a normal re-read (no in-memory-only state)", async () => {
+      const owner = await createTestUser();
+      const { league } = await createTestLeague(owner.id, 4);
+      await fillOpenLeagueSlotsWithBots(league.id, owner.id);
+
+      const first = await prisma.leagueMember.findMany({
+        where: { leagueId: league.id, participantType: "BOT" },
+        orderBy: { draftSlot: "asc" },
+      });
+      // A completely independent read (simulating a fresh process/request)
+      // must see the identical persisted values.
+      const second = await prisma.leagueMember.findMany({
+        where: { leagueId: league.id, participantType: "BOT" },
+        orderBy: { draftSlot: "asc" },
+      });
+      expect(second.map((b) => b.botStrategy)).toEqual(first.map((b) => b.botStrategy));
+    });
   });
 });

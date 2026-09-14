@@ -98,7 +98,7 @@ export async function createTestPlayer(
 export async function createTestBotMember(
   leagueId: string,
   draftSlot: number,
-  overrides: Partial<{ displayName: string }> = {},
+  overrides: Partial<{ displayName: string; botStrategy: "BALANCED" | "RB_HEAVY" | "WR_HEAVY" | "HERO_RB" }> = {},
 ) {
   assertUsingTestDatabase();
   const suffix = randomUUID().slice(0, 8);
@@ -108,6 +108,13 @@ export async function createTestBotMember(
       draftSlot,
       participantType: "BOT",
       displayName: overrides.displayName ?? `Test Bot ${suffix}`,
+      // Phase 5.6: the participant-shape CHECK constraint requires every
+      // BOT row to carry a non-null botStrategy. Tests that don't care
+      // which strategy get BALANCED (Phase 5.5's original, un-onesie-capped
+      // behavior is a strict subset of BALANCED's post-5.6 behavior); tests
+      // that specifically exercise strategy differentiation pass an
+      // explicit override.
+      botStrategy: overrides.botStrategy ?? "BALANCED",
     },
   });
 }

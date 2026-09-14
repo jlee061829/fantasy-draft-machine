@@ -1,4 +1,5 @@
 import { DraftAlreadyStartedError, prisma } from "@fdm/database";
+import { BOT_STRATEGY_ROTATION } from "@fdm/shared";
 import { getDraftForLeague } from "../drafts/get-draft-for-league";
 import { authorizeLeagueOwner } from "./authorize-commissioner";
 
@@ -87,6 +88,11 @@ export async function fillOpenLeagueSlotsWithBots(
           draftSlot: slot,
           participantType: "BOT" as const,
           displayName: `CPU ${existingBotCount + index + 1}`,
+          // Phase 5.6: same deterministic, no-randomness rotation as the
+          // "CPU N" ordinal above, continuing from however many BOT rows
+          // already exist — see CLAUDE.md's Phase 5.6 notes for why this
+          // must never depend on draftSlot or in-memory state.
+          botStrategy: BOT_STRATEGY_ROTATION[(existingBotCount + index) % BOT_STRATEGY_ROTATION.length]!,
         })),
       });
     }

@@ -41,6 +41,7 @@ export type LeagueMemberMinAggregateOutputType = {
   draftSlot: number | null
   participantType: $Enums.LeagueMemberType | null
   displayName: string | null
+  botStrategy: $Enums.BotStrategy | null
 }
 
 export type LeagueMemberMaxAggregateOutputType = {
@@ -50,6 +51,7 @@ export type LeagueMemberMaxAggregateOutputType = {
   draftSlot: number | null
   participantType: $Enums.LeagueMemberType | null
   displayName: string | null
+  botStrategy: $Enums.BotStrategy | null
 }
 
 export type LeagueMemberCountAggregateOutputType = {
@@ -59,6 +61,7 @@ export type LeagueMemberCountAggregateOutputType = {
   draftSlot: number
   participantType: number
   displayName: number
+  botStrategy: number
   _all: number
 }
 
@@ -78,6 +81,7 @@ export type LeagueMemberMinAggregateInputType = {
   draftSlot?: true
   participantType?: true
   displayName?: true
+  botStrategy?: true
 }
 
 export type LeagueMemberMaxAggregateInputType = {
@@ -87,6 +91,7 @@ export type LeagueMemberMaxAggregateInputType = {
   draftSlot?: true
   participantType?: true
   displayName?: true
+  botStrategy?: true
 }
 
 export type LeagueMemberCountAggregateInputType = {
@@ -96,6 +101,7 @@ export type LeagueMemberCountAggregateInputType = {
   draftSlot?: true
   participantType?: true
   displayName?: true
+  botStrategy?: true
   _all?: true
 }
 
@@ -192,6 +198,7 @@ export type LeagueMemberGroupByOutputType = {
   draftSlot: number
   participantType: $Enums.LeagueMemberType
   displayName: string | null
+  botStrategy: $Enums.BotStrategy | null
   _count: LeagueMemberCountAggregateOutputType | null
   _avg: LeagueMemberAvgAggregateOutputType | null
   _sum: LeagueMemberSumAggregateOutputType | null
@@ -224,6 +231,7 @@ export type LeagueMemberWhereInput = {
   draftSlot?: Prisma.IntFilter<"LeagueMember"> | number
   participantType?: Prisma.EnumLeagueMemberTypeFilter<"LeagueMember"> | $Enums.LeagueMemberType
   displayName?: Prisma.StringNullableFilter<"LeagueMember"> | string | null
+  botStrategy?: Prisma.EnumBotStrategyNullableFilter<"LeagueMember"> | $Enums.BotStrategy | null
   league?: Prisma.XOR<Prisma.LeagueScalarRelationFilter, Prisma.LeagueWhereInput>
   user?: Prisma.XOR<Prisma.UserNullableScalarRelationFilter, Prisma.UserWhereInput> | null
   currentTurnDrafts?: Prisma.DraftListRelationFilter
@@ -237,6 +245,7 @@ export type LeagueMemberOrderByWithRelationInput = {
   draftSlot?: Prisma.SortOrder
   participantType?: Prisma.SortOrder
   displayName?: Prisma.SortOrderInput | Prisma.SortOrder
+  botStrategy?: Prisma.SortOrderInput | Prisma.SortOrder
   league?: Prisma.LeagueOrderByWithRelationInput
   user?: Prisma.UserOrderByWithRelationInput
   currentTurnDrafts?: Prisma.DraftOrderByRelationAggregateInput
@@ -255,6 +264,7 @@ export type LeagueMemberWhereUniqueInput = Prisma.AtLeast<{
   draftSlot?: Prisma.IntFilter<"LeagueMember"> | number
   participantType?: Prisma.EnumLeagueMemberTypeFilter<"LeagueMember"> | $Enums.LeagueMemberType
   displayName?: Prisma.StringNullableFilter<"LeagueMember"> | string | null
+  botStrategy?: Prisma.EnumBotStrategyNullableFilter<"LeagueMember"> | $Enums.BotStrategy | null
   league?: Prisma.XOR<Prisma.LeagueScalarRelationFilter, Prisma.LeagueWhereInput>
   user?: Prisma.XOR<Prisma.UserNullableScalarRelationFilter, Prisma.UserWhereInput> | null
   currentTurnDrafts?: Prisma.DraftListRelationFilter
@@ -268,6 +278,7 @@ export type LeagueMemberOrderByWithAggregationInput = {
   draftSlot?: Prisma.SortOrder
   participantType?: Prisma.SortOrder
   displayName?: Prisma.SortOrderInput | Prisma.SortOrder
+  botStrategy?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.LeagueMemberCountOrderByAggregateInput
   _avg?: Prisma.LeagueMemberAvgOrderByAggregateInput
   _max?: Prisma.LeagueMemberMaxOrderByAggregateInput
@@ -285,6 +296,7 @@ export type LeagueMemberScalarWhereWithAggregatesInput = {
   draftSlot?: Prisma.IntWithAggregatesFilter<"LeagueMember"> | number
   participantType?: Prisma.EnumLeagueMemberTypeWithAggregatesFilter<"LeagueMember"> | $Enums.LeagueMemberType
   displayName?: Prisma.StringNullableWithAggregatesFilter<"LeagueMember"> | string | null
+  botStrategy?: Prisma.EnumBotStrategyNullableWithAggregatesFilter<"LeagueMember"> | $Enums.BotStrategy | null
 }
 
 export type LeagueMemberCreateInput = {
@@ -292,6 +304,7 @@ export type LeagueMemberCreateInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   league: Prisma.LeagueCreateNestedOneWithoutMembersInput
   user?: Prisma.UserCreateNestedOneWithoutLeagueMembershipsInput
   currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentMemberInput
@@ -305,6 +318,7 @@ export type LeagueMemberUncheckedCreateInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentMemberInput
   picks?: Prisma.PickUncheckedCreateNestedManyWithoutLeagueMemberInput
 }
@@ -314,6 +328,7 @@ export type LeagueMemberUpdateInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   league?: Prisma.LeagueUpdateOneRequiredWithoutMembersNestedInput
   user?: Prisma.UserUpdateOneWithoutLeagueMembershipsNestedInput
   currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentMemberNestedInput
@@ -327,6 +342,7 @@ export type LeagueMemberUncheckedUpdateInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentMemberNestedInput
   picks?: Prisma.PickUncheckedUpdateManyWithoutLeagueMemberNestedInput
 }
@@ -338,6 +354,7 @@ export type LeagueMemberCreateManyInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
 }
 
 export type LeagueMemberUpdateManyMutationInput = {
@@ -345,6 +362,7 @@ export type LeagueMemberUpdateManyMutationInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
 }
 
 export type LeagueMemberUncheckedUpdateManyInput = {
@@ -354,6 +372,7 @@ export type LeagueMemberUncheckedUpdateManyInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
 }
 
 export type LeagueMemberListRelationFilter = {
@@ -383,6 +402,7 @@ export type LeagueMemberCountOrderByAggregateInput = {
   draftSlot?: Prisma.SortOrder
   participantType?: Prisma.SortOrder
   displayName?: Prisma.SortOrder
+  botStrategy?: Prisma.SortOrder
 }
 
 export type LeagueMemberAvgOrderByAggregateInput = {
@@ -396,6 +416,7 @@ export type LeagueMemberMaxOrderByAggregateInput = {
   draftSlot?: Prisma.SortOrder
   participantType?: Prisma.SortOrder
   displayName?: Prisma.SortOrder
+  botStrategy?: Prisma.SortOrder
 }
 
 export type LeagueMemberMinOrderByAggregateInput = {
@@ -405,6 +426,7 @@ export type LeagueMemberMinOrderByAggregateInput = {
   draftSlot?: Prisma.SortOrder
   participantType?: Prisma.SortOrder
   displayName?: Prisma.SortOrder
+  botStrategy?: Prisma.SortOrder
 }
 
 export type LeagueMemberSumOrderByAggregateInput = {
@@ -509,6 +531,10 @@ export type EnumLeagueMemberTypeFieldUpdateOperationsInput = {
   set?: $Enums.LeagueMemberType
 }
 
+export type NullableEnumBotStrategyFieldUpdateOperationsInput = {
+  set?: $Enums.BotStrategy | null
+}
+
 export type LeagueMemberCreateNestedOneWithoutCurrentTurnDraftsInput = {
   create?: Prisma.XOR<Prisma.LeagueMemberCreateWithoutCurrentTurnDraftsInput, Prisma.LeagueMemberUncheckedCreateWithoutCurrentTurnDraftsInput>
   connectOrCreate?: Prisma.LeagueMemberCreateOrConnectWithoutCurrentTurnDraftsInput
@@ -544,6 +570,7 @@ export type LeagueMemberCreateWithoutUserInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   league: Prisma.LeagueCreateNestedOneWithoutMembersInput
   currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentMemberInput
   picks?: Prisma.PickCreateNestedManyWithoutLeagueMemberInput
@@ -555,6 +582,7 @@ export type LeagueMemberUncheckedCreateWithoutUserInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentMemberInput
   picks?: Prisma.PickUncheckedCreateNestedManyWithoutLeagueMemberInput
 }
@@ -595,6 +623,7 @@ export type LeagueMemberScalarWhereInput = {
   draftSlot?: Prisma.IntFilter<"LeagueMember"> | number
   participantType?: Prisma.EnumLeagueMemberTypeFilter<"LeagueMember"> | $Enums.LeagueMemberType
   displayName?: Prisma.StringNullableFilter<"LeagueMember"> | string | null
+  botStrategy?: Prisma.EnumBotStrategyNullableFilter<"LeagueMember"> | $Enums.BotStrategy | null
 }
 
 export type LeagueMemberCreateWithoutLeagueInput = {
@@ -602,6 +631,7 @@ export type LeagueMemberCreateWithoutLeagueInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   user?: Prisma.UserCreateNestedOneWithoutLeagueMembershipsInput
   currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentMemberInput
   picks?: Prisma.PickCreateNestedManyWithoutLeagueMemberInput
@@ -613,6 +643,7 @@ export type LeagueMemberUncheckedCreateWithoutLeagueInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentMemberInput
   picks?: Prisma.PickUncheckedCreateNestedManyWithoutLeagueMemberInput
 }
@@ -648,6 +679,7 @@ export type LeagueMemberCreateWithoutCurrentTurnDraftsInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   league: Prisma.LeagueCreateNestedOneWithoutMembersInput
   user?: Prisma.UserCreateNestedOneWithoutLeagueMembershipsInput
   picks?: Prisma.PickCreateNestedManyWithoutLeagueMemberInput
@@ -660,6 +692,7 @@ export type LeagueMemberUncheckedCreateWithoutCurrentTurnDraftsInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   picks?: Prisma.PickUncheckedCreateNestedManyWithoutLeagueMemberInput
 }
 
@@ -684,6 +717,7 @@ export type LeagueMemberUpdateWithoutCurrentTurnDraftsInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   league?: Prisma.LeagueUpdateOneRequiredWithoutMembersNestedInput
   user?: Prisma.UserUpdateOneWithoutLeagueMembershipsNestedInput
   picks?: Prisma.PickUpdateManyWithoutLeagueMemberNestedInput
@@ -696,6 +730,7 @@ export type LeagueMemberUncheckedUpdateWithoutCurrentTurnDraftsInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   picks?: Prisma.PickUncheckedUpdateManyWithoutLeagueMemberNestedInput
 }
 
@@ -704,6 +739,7 @@ export type LeagueMemberCreateWithoutPicksInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   league: Prisma.LeagueCreateNestedOneWithoutMembersInput
   user?: Prisma.UserCreateNestedOneWithoutLeagueMembershipsInput
   currentTurnDrafts?: Prisma.DraftCreateNestedManyWithoutCurrentMemberInput
@@ -716,6 +752,7 @@ export type LeagueMemberUncheckedCreateWithoutPicksInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedCreateNestedManyWithoutCurrentMemberInput
 }
 
@@ -740,6 +777,7 @@ export type LeagueMemberUpdateWithoutPicksInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   league?: Prisma.LeagueUpdateOneRequiredWithoutMembersNestedInput
   user?: Prisma.UserUpdateOneWithoutLeagueMembershipsNestedInput
   currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentMemberNestedInput
@@ -752,6 +790,7 @@ export type LeagueMemberUncheckedUpdateWithoutPicksInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentMemberNestedInput
 }
 
@@ -761,6 +800,7 @@ export type LeagueMemberCreateManyUserInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
 }
 
 export type LeagueMemberUpdateWithoutUserInput = {
@@ -768,6 +808,7 @@ export type LeagueMemberUpdateWithoutUserInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   league?: Prisma.LeagueUpdateOneRequiredWithoutMembersNestedInput
   currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentMemberNestedInput
   picks?: Prisma.PickUpdateManyWithoutLeagueMemberNestedInput
@@ -779,6 +820,7 @@ export type LeagueMemberUncheckedUpdateWithoutUserInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentMemberNestedInput
   picks?: Prisma.PickUncheckedUpdateManyWithoutLeagueMemberNestedInput
 }
@@ -789,6 +831,7 @@ export type LeagueMemberUncheckedUpdateManyWithoutUserInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
 }
 
 export type LeagueMemberCreateManyLeagueInput = {
@@ -797,6 +840,7 @@ export type LeagueMemberCreateManyLeagueInput = {
   draftSlot: number
   participantType?: $Enums.LeagueMemberType
   displayName?: string | null
+  botStrategy?: $Enums.BotStrategy | null
 }
 
 export type LeagueMemberUpdateWithoutLeagueInput = {
@@ -804,6 +848,7 @@ export type LeagueMemberUpdateWithoutLeagueInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   user?: Prisma.UserUpdateOneWithoutLeagueMembershipsNestedInput
   currentTurnDrafts?: Prisma.DraftUpdateManyWithoutCurrentMemberNestedInput
   picks?: Prisma.PickUpdateManyWithoutLeagueMemberNestedInput
@@ -815,6 +860,7 @@ export type LeagueMemberUncheckedUpdateWithoutLeagueInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
   currentTurnDrafts?: Prisma.DraftUncheckedUpdateManyWithoutCurrentMemberNestedInput
   picks?: Prisma.PickUncheckedUpdateManyWithoutLeagueMemberNestedInput
 }
@@ -825,6 +871,7 @@ export type LeagueMemberUncheckedUpdateManyWithoutLeagueInput = {
   draftSlot?: Prisma.IntFieldUpdateOperationsInput | number
   participantType?: Prisma.EnumLeagueMemberTypeFieldUpdateOperationsInput | $Enums.LeagueMemberType
   displayName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  botStrategy?: Prisma.NullableEnumBotStrategyFieldUpdateOperationsInput | $Enums.BotStrategy | null
 }
 
 
@@ -874,6 +921,7 @@ export type LeagueMemberSelect<ExtArgs extends runtime.Types.Extensions.Internal
   draftSlot?: boolean
   participantType?: boolean
   displayName?: boolean
+  botStrategy?: boolean
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
   user?: boolean | Prisma.LeagueMember$userArgs<ExtArgs>
   currentTurnDrafts?: boolean | Prisma.LeagueMember$currentTurnDraftsArgs<ExtArgs>
@@ -888,6 +936,7 @@ export type LeagueMemberSelectCreateManyAndReturn<ExtArgs extends runtime.Types.
   draftSlot?: boolean
   participantType?: boolean
   displayName?: boolean
+  botStrategy?: boolean
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
   user?: boolean | Prisma.LeagueMember$userArgs<ExtArgs>
 }, ExtArgs["result"]["leagueMember"]>
@@ -899,6 +948,7 @@ export type LeagueMemberSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.
   draftSlot?: boolean
   participantType?: boolean
   displayName?: boolean
+  botStrategy?: boolean
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
   user?: boolean | Prisma.LeagueMember$userArgs<ExtArgs>
 }, ExtArgs["result"]["leagueMember"]>
@@ -910,9 +960,10 @@ export type LeagueMemberSelectScalar = {
   draftSlot?: boolean
   participantType?: boolean
   displayName?: boolean
+  botStrategy?: boolean
 }
 
-export type LeagueMemberOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "leagueId" | "userId" | "draftSlot" | "participantType" | "displayName", ExtArgs["result"]["leagueMember"]>
+export type LeagueMemberOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "leagueId" | "userId" | "draftSlot" | "participantType" | "displayName" | "botStrategy", ExtArgs["result"]["leagueMember"]>
 export type LeagueMemberInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   league?: boolean | Prisma.LeagueDefaultArgs<ExtArgs>
   user?: boolean | Prisma.LeagueMember$userArgs<ExtArgs>
@@ -944,6 +995,7 @@ export type $LeagueMemberPayload<ExtArgs extends runtime.Types.Extensions.Intern
     draftSlot: number
     participantType: $Enums.LeagueMemberType
     displayName: string | null
+    botStrategy: $Enums.BotStrategy | null
   }, ExtArgs["result"]["leagueMember"]>
   composites: {}
 }
@@ -1377,6 +1429,7 @@ export interface LeagueMemberFieldRefs {
   readonly draftSlot: Prisma.FieldRef<"LeagueMember", 'Int'>
   readonly participantType: Prisma.FieldRef<"LeagueMember", 'LeagueMemberType'>
   readonly displayName: Prisma.FieldRef<"LeagueMember", 'String'>
+  readonly botStrategy: Prisma.FieldRef<"LeagueMember", 'BotStrategy'>
 }
     
 
