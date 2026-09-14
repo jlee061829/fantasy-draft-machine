@@ -74,7 +74,7 @@ async function startDraftWithBotOnClock(overrides: LeagueOverrides = {}) {
 async function createPlayerWithAdp(
   format: ScoringFormat,
   adp: number,
-  overrides: Partial<{ fullName: string; nflTeam: string | null }> = {},
+  overrides: Partial<{ fullName: string; position: string; nflTeam: string | null }> = {},
 ) {
   const player = await createTestPlayer({ nflTeam: "KC", ...overrides });
   await prisma.playerAdp.create({ data: { playerId: player.id, format, adp, source: "test" } });
@@ -273,6 +273,49 @@ describe("processBotDraftTurn", () => {
       expect(persisted?.currentMemberId).toBe(bot.id);
       const pickCount = await prisma.pick.count({ where: { draftId: draft.id } });
       expect(pickCount).toBe(0);
+    });
+  });
+
+  // Phase 5.5: full ranking-rule coverage (position-penalty bands, tier
+  // precedence, ownership scoping, determinism) lives in
+  // position-aware-selection.test.ts against selectPositionAwareBotPlayerId
+  // directly. This proves the higher-level wiring: that processBotDraftTurn
+  // actually calls the position-aware selector (not the plain
+  // selectBestAvailablePlayerId a naive reading of "BEST_AVAILABLE" would
+  // predict) and applies its result through the normal path.
+  describe("position-aware selection (wiring)", () => {
+    it("prefers a needed WR over an additional QB once the BOT already owns multiple QBs", async () => {
+      const { league, bot, draft } = await startDraftWithBotOnClock({ teamCount: 4 });
+      const ownedQb1 = await createTestPlayer({ nflTeam: "KC", position: "QB", fullName: "Owned QB1" });
+      const ownedQb2 = await createTestPlayer({ nflTeam: "KC", position: "QB", fullName: "Owned QB2" });
+      await prisma.pick.create({
+        data: { draftId: draft.id, leagueMemberId: bot.id, playerId: ownedQb1.id, pickNumber: 1 },
+      });
+      await prisma.pick.create({
+        data: { draftId: draft.id, leagueMemberId: bot.id, playerId: ownedQb2.id, pickNumber: 2 },
+      });
+      await prisma.draft.update({ where: { id: draft.id }, data: { currentPickNumber: 3 } });
+
+      // Raw ADP alone would pick the QB (40 < 41) — this is exactly the
+      // "BEST_AVAILABLE would over-draft QB" scenario 5.5 exists to fix.
+      const qb = await createPlayerWithAdp(league.scoringFormat, 40, {
+        fullName: "QB3 candidate",
+        position: "QB",
+      });
+      const wr = await createPlayerWithAdp(league.scoringFormat, 41, {
+        fullName: "WR candidate",
+        position: "WR",
+      });
+
+      const outcome = await processBotDraftTurn(league.id);
+
+      expect(outcome.outcome).toBe("picked");
+      if (outcome.outcome !== "picked") throw new Error("unreachable");
+      expect(outcome.result.pick.playerId).toBe(wr.id);
+      expect(outcome.result.pick.playerId).not.toBe(qb.id);
+      expect(outcome.result.pick.leagueMemberId).toBe(bot.id);
+      expect(outcome.result.pick.wasAutopick).toBe(false);
+      expect(outcome.result.draft.currentPickNumber).toBe(4);
     });
   });
 

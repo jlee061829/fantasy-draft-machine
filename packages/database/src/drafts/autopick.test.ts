@@ -386,6 +386,57 @@ describe("processExpiredDraftTurn", () => {
   });
 });
 
+// Phase 5.5: proves human timer-autopick's selection semantics were not
+// silently changed by adding position-aware BOT strategy. Constructs an
+// identical "owns multiple QBs already" roster shape to the one
+// bot-turn.test.ts's "position-aware selection (wiring)" test uses (where a
+// BOT in this exact shape picks the WR instead) and confirms
+// processExpiredDraftTurn still picks the raw best-available QB — i.e. it
+// is still calling selectBestAvailablePlayerId, not
+// selectPositionAwareBotPlayerId.
+describe("human/BOT strategy separation (Phase 5.5)", () => {
+  beforeEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  afterEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  it("still selects the raw BEST_AVAILABLE QB for a HUMAN timeout, even with a QB-heavy existing roster", async () => {
+    const { league, membershipsBySlot, draft } = await startFullDraft({ teamCount: 4 });
+    const ownerMembershipId = membershipsBySlot[1]!;
+    const ownedQb1 = await createTestPlayer({ nflTeam: "KC", position: "QB", fullName: "Owned QB1" });
+    const ownedQb2 = await createTestPlayer({ nflTeam: "KC", position: "QB", fullName: "Owned QB2" });
+    await prisma.pick.create({
+      data: { draftId: draft.id, leagueMemberId: ownerMembershipId, playerId: ownedQb1.id, pickNumber: 1 },
+    });
+    await prisma.pick.create({
+      data: { draftId: draft.id, leagueMemberId: ownerMembershipId, playerId: ownedQb2.id, pickNumber: 2 },
+    });
+    await prisma.draft.update({ where: { id: draft.id }, data: { currentPickNumber: 3 } });
+
+    // Same candidate shape as bot-turn.test.ts's equivalent BOT scenario,
+    // where a position-aware BOT picks the WR instead.
+    const qb = await createPlayerWithAdp(league.scoringFormat, 40, {
+      fullName: "QB3 candidate",
+      position: "QB",
+    });
+    const wr = await createPlayerWithAdp(league.scoringFormat, 41, {
+      fullName: "WR candidate",
+      position: "WR",
+    });
+
+    const outcome = await processExpiredDraftTurn(league.id);
+
+    expect(outcome.outcome).toBe("picked");
+    if (outcome.outcome !== "picked") throw new Error("unreachable");
+    expect(outcome.result.pick.playerId).toBe(qb.id);
+    expect(outcome.result.pick.playerId).not.toBe(wr.id);
+    expect(outcome.result.pick.wasAutopick).toBe(true);
+  });
+});
+
 describe("findExpiredActiveDraftLeagueIds", () => {
   beforeEach(async () => {
     await cleanupLeagueTestData();

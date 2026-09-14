@@ -1,6 +1,6 @@
 import { prisma } from "../client.js";
 import { applyPick, lockDraftForLeague, type SubmitPickResult } from "./submit-pick.js";
-import { selectBestAvailablePlayerId } from "./player-selection.js";
+import { selectPositionAwareBotPlayerId } from "./position-aware-selection.js";
 import { BotPickExhaustedError } from "./errors.js";
 
 // Phase 5.3: the BOT counterpart to processExpiredDraftTurn. Mirrors its
@@ -53,8 +53,13 @@ export async function findActiveBotTurnLeagueIds(): Promise<string[]> {
 //   4. read League config plainly (unlocked) — safe for the same reason
 //      submitPick's/processExpiredDraftTurn's League reads are: settings/
 //      reorder mutations already return 409 once a Draft exists
-//   5. select the best available player (selectBestAvailablePlayerId, the
-//      same shared Phase 5.2 selection primitive human timer-autopick uses)
+//   5. select a player using selectPositionAwareBotPlayerId (Phase 5.5) —
+//      a BOT-only, roster-aware ranking primitive, distinct from the
+//      selectBestAvailablePlayerId human timer-autopick still uses
+//      unchanged. See position-aware-selection.ts for the full ranking
+//      rules; both selectors share the same read-only, no-lock-of-its-own
+//      contract (called inside this function's own transaction, never
+//      write anything, return null on exhaustion).
 //   6. delegate to the same applyPick used by submitPick and
 //      processExpiredDraftTurn, attributing the Pick to the BOT's own
 //      LeagueMember.id with wasAutopick: false — a BOT's own intentional
@@ -96,9 +101,13 @@ export async function processBotDraftTurn(leagueId: string): Promise<BotTurnOutc
       },
     });
 
-    const playerId = await selectBestAvailablePlayerId(tx, {
+    const playerId = await selectPositionAwareBotPlayerId(tx, {
       draftId: draft.id,
+      leagueMemberId: draft.currentMemberId,
       scoringFormat: league.scoringFormat,
+      rosterSize: league.rosterSize,
+      currentPickNumber: draft.currentPickNumber,
+      teamCount: league.teamCount,
     });
     if (!playerId) {
       throw new BotPickExhaustedError(
