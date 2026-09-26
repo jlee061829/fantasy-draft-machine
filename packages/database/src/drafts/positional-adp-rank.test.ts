@@ -25,7 +25,7 @@ describe("getPositionalAdpRank", () => {
   });
 
   it("ranks a known QB pool exactly by ADP ascending", async () => {
-    const qbs = [];
+    const qbs: Awaited<ReturnType<typeof createRankedPlayer>>[] = [];
     for (let i = 1; i <= 10; i++) {
       qbs.push(await createRankedPlayer("QB", "PPR", i * 10));
     }
