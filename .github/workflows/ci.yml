@@ -1,5 +1,5 @@
 # Reproduces the project's existing local verification gate:
-# fresh workspace build -> workspace typecheck -> each package's test suite.
+# lint -> fresh workspace build -> workspace typecheck -> each package's test suite.
 #
 # No secrets are used. Every credential below is a disposable value for the
 # ephemeral Postgres service container or a fake value that only satisfies
@@ -58,6 +58,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Lint is not type-aware, so it needs no Postgres, .env.test, migrations,
+      # dist, .next/types, or AUTH values — run it first to fail fast.
+      - name: Lint
+        run: pnpm lint
 
       # .env.test files are gitignored (.env.*). Each DB-backed package's test
       # script unsets any inherited DATABASE_URL and loads its own .env.test,
