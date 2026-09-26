@@ -174,7 +174,7 @@ export default async function DraftPage({
         </>
       ) : (
         <p>
-          The commissioner hasn't started the draft yet — {members.length}/{league.teamCount}{" "}
+          The commissioner hasn&apos;t started the draft yet — {members.length}/{league.teamCount}{" "}
           joined.
         </p>
       )}

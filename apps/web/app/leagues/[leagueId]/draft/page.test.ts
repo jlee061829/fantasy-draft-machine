@@ -59,7 +59,9 @@ async function fillRemainingSlots(leagueId: string, teamCount: number) {
 
 // Same plain-element-tree inspection convention used throughout this
 // project's other page tests (no @testing-library/react, no jsdom render).
-function findElementsByType(node: unknown, type: unknown, acc: any[] = []): any[] {
+type ElementLike = { type: unknown; props: Record<string, unknown> };
+
+function findElementsByType(node: unknown, type: unknown, acc: ElementLike[] = []): ElementLike[] {
   if (node === null || typeof node !== "object") {
     return acc;
   }
@@ -68,7 +70,7 @@ function findElementsByType(node: unknown, type: unknown, acc: any[] = []): any[
     return acc;
   }
   if ("type" in node && "props" in node) {
-    const element = node as { type: unknown; props: { children?: unknown } };
+    const element = node as ElementLike;
     if (element.type === type) {
       acc.push(element);
     }

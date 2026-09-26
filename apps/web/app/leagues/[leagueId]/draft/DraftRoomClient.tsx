@@ -227,6 +227,7 @@ export function DraftRoomClient({
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (phase !== "ACTIVE" || turnDeadline === null) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional one-time clock resync when a new deadline arrives; without it the countdown reads a stale `now` until the new interval's first tick (~1s later)
     setNow(Date.now());
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);

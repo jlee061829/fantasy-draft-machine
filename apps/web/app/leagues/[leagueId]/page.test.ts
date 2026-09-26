@@ -34,7 +34,9 @@ function paramsFor(leagueId: string) {
 // This walks that plain tree looking for elements whose `type` matches, the
 // same lightweight way the file already just calls the page function and
 // inspects what comes back.
-function findElementsByType(node: unknown, type: unknown, acc: any[] = []): any[] {
+type ElementLike = { type: unknown; props: Record<string, unknown> };
+
+function findElementsByType(node: unknown, type: unknown, acc: ElementLike[] = []): ElementLike[] {
   if (node === null || typeof node !== "object") {
     return acc;
   }
@@ -43,7 +45,7 @@ function findElementsByType(node: unknown, type: unknown, acc: any[] = []): any[
     return acc;
   }
   if ("type" in node && "props" in node) {
-    const element = node as { type: unknown; props: { children?: unknown } };
+    const element = node as ElementLike;
     if (element.type === type) {
       acc.push(element);
     }

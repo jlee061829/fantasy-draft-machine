@@ -247,11 +247,8 @@ describe("lineup-aware bot strategy simulation (Phase 5.6)", () => {
           Object.entries(totals).map(([position, counts]) => [position, Number(avg(counts).toFixed(2))]),
         );
       }
-      // eslint-disable-next-line no-console
       console.log("[lineup-strategy-simulation] per-strategy average roster shape:", JSON.stringify(report, null, 2));
-      // eslint-disable-next-line no-console
       console.log("[lineup-strategy-simulation] QB1-only vs QB2:", { qb1OnlyCount, qb2Count });
-      // eslint-disable-next-line no-console
       console.log("[lineup-strategy-simulation] TE1-only vs TE2:", { te1OnlyCount, te2Count });
 
       // --- directional strategy differentiation (not exact numbers) ---
@@ -316,7 +313,6 @@ describe("lineup-aware bot strategy simulation (Phase 5.6)", () => {
         totalK += counts.K ?? 0;
         totalDef += counts.DEF ?? 0;
       }
-      // eslint-disable-next-line no-console
       console.log("[lineup-strategy-simulation] 20-team totals — K:", totalK, "DEF:", totalDef);
       // No K2/DEF2 anywhere: total consumption cannot exceed teamCount for
       // either position under the hard per-BOT cap — this is the direct

@@ -203,16 +203,13 @@ describe("bot strategy simulation (Phase 5.5)", () => {
 
       // Logged (not asserted) for the implementation report: per-slot
       // position distributions and earliest K/DEF pick/round.
-      // eslint-disable-next-line no-console
       console.log(
         "[bot-strategy-simulation] per-slot distributions:",
         JSON.stringify(distributionBySlot, null, 2),
       );
       const earliestKRound = earliestKPick ? Math.ceil(earliestKPick / teamCount) : null;
       const earliestDefRound = earliestDefPick ? Math.ceil(earliestDefPick / teamCount) : null;
-      // eslint-disable-next-line no-console
       console.log("[bot-strategy-simulation] earliest K pick/round:", earliestKPick, earliestKRound);
-      // eslint-disable-next-line no-console
       console.log(
         "[bot-strategy-simulation] earliest DEF pick/round:",
         earliestDefPick,
@@ -243,9 +240,7 @@ describe("bot strategy simulation (Phase 5.5)", () => {
         one: counts.filter((c) => c === 1).length,
         twoPlus: counts.filter((c) => c >= 2).length,
       });
-      // eslint-disable-next-line no-console
       console.log("[bot-strategy-simulation] K count buckets (0/1/2+):", countBuckets(kCounts));
-      // eslint-disable-next-line no-console
       console.log("[bot-strategy-simulation] DEF count buckets (0/1/2+):", countBuckets(defCounts));
 
       // Post-5.5 product decision: K/DEF are explicitly, strongly

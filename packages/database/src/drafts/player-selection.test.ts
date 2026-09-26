@@ -112,7 +112,7 @@ describe("selectBestAvailablePlayerId", () => {
     });
 
     it("keeps a player eligible if they were drafted only in a different draft", async () => {
-      const { draft, league, member } = await createDraftContext("PPR");
+      const { draft, league } = await createDraftContext("PPR");
       const other = await createDraftContext("PPR");
       const player = await createRosteredPlayer();
       await addAdp(player.id, "PPR", 1);
@@ -154,7 +154,7 @@ describe("selectBestAvailablePlayerId", () => {
       const { draft, league } = await createDraftContext("PPR");
       const hasAdp = await createRosteredPlayer({ fullName: "Has ADP", searchRank: 500 });
       await addAdp(hasAdp.id, "PPR", 100);
-      const noAdpGreatRank = await createRosteredPlayer({ fullName: "No ADP", searchRank: 1 });
+      await createRosteredPlayer({ fullName: "No ADP", searchRank: 1 });
 
       const result = await select(draft.id, league.scoringFormat);
 
