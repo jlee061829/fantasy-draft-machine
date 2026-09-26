@@ -1,7 +1,8 @@
-import { createSocketTicket, prisma } from "@fdm/database";
+import { createSocketTicket, prisma, submitPick } from "@fdm/database";
 import { cleanupLeagueTestData } from "@fdm/database/test-support";
 import type { DraftStateResult } from "@fdm/shared";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createPickRateLimiter } from "../pick-rate-limiter.js";
 import type { SocketServerHandle } from "../server.js";
 import {
   addMember,
@@ -281,5 +282,253 @@ describe("draft:pick", () => {
 
     observerSocket.disconnect();
     rejectedSocket.disconnect();
+  });
+});
+
+// Phase 6.3: draft:pick rate limiting. These run against a dedicated server
+// whose limiter uses a frozen clock, so no token can refill mid-test and
+// every assertion is deterministic without sleeping. Each test builds fresh
+// users via startFullDraft, so buckets never carry over between tests even
+// though the limiter instance is shared across this describe block — which
+// is itself the production shape (one limiter per server process).
+describe("draft:pick rate limiting", () => {
+  let limitedHandle: SocketServerHandle;
+  let limitedBaseUrl: string;
+
+  beforeAll(async () => {
+    const frozenNow = Date.now();
+    ({ handle: limitedHandle, baseUrl: limitedBaseUrl } = await startTestServer({
+      pickRateLimiter: createPickRateLimiter({ now: () => frozenNow }),
+    }));
+  });
+
+  afterAll(async () => {
+    await stopTestServer(limitedHandle);
+  });
+
+  beforeEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  afterEach(async () => {
+    await cleanupLeagueTestData();
+  });
+
+  async function connectAndJoin(userId: string, leagueId: string) {
+    const ticket = await createSocketTicket(userId);
+    const socket = await connectClient(limitedBaseUrl, ticket.token);
+    await joinDraft(socket, { leagueId });
+    return socket;
+  }
+
+  it("lets an off-turn member's first 3 attempts reach real draft handling, then throttles the 4th", async () => {
+    const { league, draft, owner, membersBySlot, membershipsBySlot } = await startFullDraft({
+      teamCount: 4,
+    });
+    const [playerX, playerY, playerZ] = await Promise.all([
+      createTestPlayer(),
+      createTestPlayer(),
+      createTestPlayer(),
+    ]);
+    const socket = await connectAndJoin(membersBySlot[2]!, league.id);
+
+    // Attempt 1: slot 1 is on the clock, so submitPick's locked turn check
+    // rejects it.
+    const first = await submitDraftPick(socket, { leagueId: league.id, playerId: playerX.id });
+    expect(first).toEqual({ ok: false, error: "NOT_ON_THE_CLOCK" });
+
+    // Advance the draft outside the socket transport (the direct service is
+    // never rate limited): slot 1 takes playerX, putting slot 2 on the clock.
+    await submitPick(league.id, owner.id, playerX.id);
+
+    // Attempts 2 and 3 produce outcomes that only live database state can
+    // explain — proof these went through submitPick, not a string-matching
+    // shortcut: playerX is now drafted, and slot 2 is now legitimately on
+    // the clock and actually persists a Pick.
+    const second = await submitDraftPick(socket, { leagueId: league.id, playerId: playerX.id });
+    expect(second).toEqual({ ok: false, error: "PLAYER_ALREADY_DRAFTED" });
+
+    const third = await submitDraftPick(socket, { leagueId: league.id, playerId: playerY.id });
+    expect(third).toEqual({ ok: true });
+    const slot2Pick = await prisma.pick.findUnique({
+      where: { draftId_playerId: { draftId: draft.id, playerId: playerY.id } },
+    });
+    expect(slot2Pick?.leagueMemberId).toBe(membershipsBySlot[2]);
+
+    // Attempt 4: bucket exhausted — rejected before any DB work.
+    const fourth = await submitDraftPick(socket, { leagueId: league.id, playerId: playerZ.id });
+    expect(fourth).toEqual({ ok: false, error: "RATE_LIMITED" });
+
+    expect(await prisma.pick.count({ where: { draftId: draft.id } })).toBe(2);
+    const persisted = await prisma.draft.findUnique({ where: { id: draft.id } });
+    expect(persisted?.currentPickNumber).toBe(3);
+
+    socket.disconnect();
+  });
+
+  it("throttles exactly one of 4 simultaneous off-turn attempts; the other 3 reach the turn check", async () => {
+    const { league, draft, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const player = await createTestPlayer();
+    const socket = await connectAndJoin(membersBySlot[2]!, league.id);
+
+    const acks = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        submitDraftPick(socket, { leagueId: league.id, playerId: player.id }),
+      ),
+    );
+
+    expect(acks.filter((a) => !a.ok && a.error === "NOT_ON_THE_CLOCK")).toHaveLength(3);
+    expect(acks.filter((a) => !a.ok && a.error === "RATE_LIMITED")).toHaveLength(1);
+    expect(await prisma.pick.count({ where: { draftId: draft.id } })).toBe(0);
+
+    socket.disconnect();
+  });
+
+  it("a throttled on-turn user creates no Pick, does not advance the Draft, and triggers no broadcast", async () => {
+    const { league, draft, owner, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const player = await createTestPlayer();
+
+    const observer = await connectAndJoin(membersBySlot[2]!, league.id);
+    let broadcastReceived = false;
+    observer.on("draft:state", () => {
+      broadcastReceived = true;
+    });
+
+    const picker = await connectAndJoin(owner.id, league.id);
+
+    // The owner is on the clock; spend all 3 tokens on requests submitPick
+    // itself rejects (unknown player), each of which reached the database.
+    for (let i = 0; i < 3; i += 1) {
+      const ack = await submitDraftPick(picker, {
+        leagueId: league.id,
+        playerId: `nonexistent-player-${i}`,
+      });
+      expect(ack).toEqual({ ok: false, error: "PLAYER_NOT_FOUND" });
+    }
+
+    // A perfectly valid on-turn pick is now throttled.
+    const throttled = await submitDraftPick(picker, { leagueId: league.id, playerId: player.id });
+    expect(throttled).toEqual({ ok: false, error: "RATE_LIMITED" });
+
+    expect(await prisma.pick.count({ where: { draftId: draft.id } })).toBe(0);
+    const persisted = await prisma.draft.findUnique({ where: { id: draft.id } });
+    expect(persisted?.currentPickNumber).toBe(1);
+    expect(persisted?.currentMemberId).toBe(draft.currentMemberId);
+    expect(persisted?.turnDeadline?.getTime()).toBe(draft.turnDeadline?.getTime());
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(broadcastReceived).toBe(false);
+
+    observer.disconnect();
+    picker.disconnect();
+  });
+
+  it("does not affect a second user when the first user's bucket is exhausted", async () => {
+    const { league, draft, owner, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const player = await createTestPlayer();
+
+    const spammer = await connectAndJoin(membersBySlot[2]!, league.id);
+    for (let i = 0; i < 3; i += 1) {
+      await submitDraftPick(spammer, { leagueId: league.id, playerId: player.id });
+    }
+    expect(await submitDraftPick(spammer, { leagueId: league.id, playerId: player.id })).toEqual({
+      ok: false,
+      error: "RATE_LIMITED",
+    });
+
+    // Another off-turn member still reaches the normal turn check...
+    const bystander = await connectAndJoin(membersBySlot[3]!, league.id);
+    expect(await submitDraftPick(bystander, { leagueId: league.id, playerId: player.id })).toEqual({
+      ok: false,
+      error: "NOT_ON_THE_CLOCK",
+    });
+
+    // ...and the on-the-clock user picks normally, with a broadcast.
+    const picker = await connectAndJoin(owner.id, league.id);
+    const broadcast = new Promise<DraftStateResult>((resolve) => {
+      spammer.once("draft:state", resolve);
+    });
+    expect(await submitDraftPick(picker, { leagueId: league.id, playerId: player.id })).toEqual({
+      ok: true,
+    });
+    expect((await broadcast).draft?.currentPickNumber).toBe(2);
+    expect(await prisma.pick.count({ where: { draftId: draft.id } })).toBe(1);
+
+    spammer.disconnect();
+    bystander.disconnect();
+    picker.disconnect();
+  });
+
+  it("makes every socket for the same authenticated user share one bucket, including a fresh reconnect", async () => {
+    const { league, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const player = await createTestPlayer();
+    const userId = membersBySlot[2]!;
+
+    const socketA = await connectAndJoin(userId, league.id);
+    const socketB = await connectAndJoin(userId, league.id);
+
+    const payload = { leagueId: league.id, playerId: player.id };
+    expect(await submitDraftPick(socketA, payload)).toEqual({ ok: false, error: "NOT_ON_THE_CLOCK" });
+    expect(await submitDraftPick(socketB, payload)).toEqual({ ok: false, error: "NOT_ON_THE_CLOCK" });
+    expect(await submitDraftPick(socketA, payload)).toEqual({ ok: false, error: "NOT_ON_THE_CLOCK" });
+
+    expect(await submitDraftPick(socketB, payload)).toEqual({ ok: false, error: "RATE_LIMITED" });
+    expect(await submitDraftPick(socketA, payload)).toEqual({ ok: false, error: "RATE_LIMITED" });
+
+    // A brand-new socket (fresh ticket, as on reconnect) does not reset it.
+    const socketC = await connectAndJoin(userId, league.id);
+    expect(await submitDraftPick(socketC, payload)).toEqual({ ok: false, error: "RATE_LIMITED" });
+
+    socketA.disconnect();
+    socketB.disconnect();
+    socketC.disconnect();
+  });
+
+  it("does not spend tokens on invalid payloads or unjoined-room requests", async () => {
+    const { league, membersBySlot } = await startFullDraft({ teamCount: 4 });
+    const otherLeague = await createTestLeague((await createTestUser()).id);
+    const player = await createTestPlayer();
+    const socket = await connectAndJoin(membersBySlot[2]!, league.id);
+
+    for (let i = 0; i < 5; i += 1) {
+      // @ts-expect-error — deliberately malformed payload (missing playerId)
+      expect(await submitDraftPick(socket, { leagueId: league.id })).toEqual({
+        ok: false,
+        error: "INVALID_PAYLOAD",
+      });
+      expect(
+        await submitDraftPick(socket, { leagueId: otherLeague.id, playerId: player.id }),
+      ).toEqual({ ok: false, error: "NOT_JOINED" });
+    }
+
+    const payload = { leagueId: league.id, playerId: player.id };
+    for (let i = 0; i < 3; i += 1) {
+      expect(await submitDraftPick(socket, payload)).toEqual({
+        ok: false,
+        error: "NOT_ON_THE_CLOCK",
+      });
+    }
+    expect(await submitDraftPick(socket, payload)).toEqual({ ok: false, error: "RATE_LIMITED" });
+
+    socket.disconnect();
+  });
+
+  it("still lets two simultaneous same-user sockets reach the database correctness layer", async () => {
+    const { league, draft, owner } = await startFullDraft({ teamCount: 4 });
+    const player = await createTestPlayer();
+    const socketA = await connectAndJoin(owner.id, league.id);
+    const socketB = await connectAndJoin(owner.id, league.id);
+
+    const acks = await Promise.all([
+      submitDraftPick(socketA, { leagueId: league.id, playerId: player.id }),
+      submitDraftPick(socketB, { leagueId: league.id, playerId: player.id }),
+    ]);
+
+    expect(acks.filter((a) => a.ok)).toHaveLength(1);
+    expect(acks.filter((a) => !a.ok)).toEqual([{ ok: false, error: "NOT_ON_THE_CLOCK" }]);
+    expect(await prisma.pick.count({ where: { draftId: draft.id } })).toBe(1);
+
+    socketA.disconnect();
+    socketB.disconnect();
   });
 });

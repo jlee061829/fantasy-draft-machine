@@ -8,6 +8,7 @@ import {
   submitPick,
 } from "@fdm/database";
 import type { DraftPickAck, DraftPickPayload, SocketErrorCode } from "@fdm/shared";
+import type { PickRateLimiter } from "../pick-rate-limiter.js";
 import { leagueRoomName } from "../rooms.js";
 import { broadcastDraftState } from "../timers/broadcast.js";
 import type { DraftServer, DraftSocket } from "../types.js";
@@ -49,6 +50,7 @@ export async function handleDraftPick(
   socket: DraftSocket,
   payload: DraftPickPayload,
   ack: (response: DraftPickAck) => void,
+  pickRateLimiter: PickRateLimiter,
 ): Promise<void> {
   const parsed = draftPickPayloadSchema.safeParse(payload);
   if (!parsed.success) {
@@ -60,6 +62,18 @@ export async function handleDraftPick(
   const room = leagueRoomName(leagueId);
   if (!socket.rooms.has(room)) {
     ack({ ok: false, error: "NOT_JOINED" });
+    return;
+  }
+
+  // Phase 6.3: charged only here, after the two cheap in-memory rejections
+  // above and immediately before the first DB work — so invalid/unjoined
+  // requests never spend a token, and a throttled request never reaches
+  // submitPick (no transaction, no Draft-row lock, no broadcast). Keyed by
+  // the authenticated userId, so every socket that user has open draws from
+  // one bucket. Availability protection only; submitPick stays the sole
+  // correctness boundary. See pick-rate-limiter.ts.
+  if (!pickRateLimiter.tryConsume(socket.data.userId)) {
+    ack({ ok: false, error: "RATE_LIMITED" });
     return;
   }
 

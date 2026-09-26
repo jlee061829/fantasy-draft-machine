@@ -24,6 +24,7 @@ export type SocketErrorCode =
   | "PLAYER_NOT_FOUND"
   | "PLAYER_ALREADY_DRAFTED"
   | "NOT_JOINED"
+  | "RATE_LIMITED"
   | "INTERNAL_ERROR";
 
 export type DraftJoinAck =

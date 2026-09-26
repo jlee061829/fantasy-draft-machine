@@ -5,7 +5,11 @@ import { createTestBotMember, createTestPlayer, createTestUser } from "@fdm/data
 import type { ClientToServerEvents, ServerToClientEvents } from "@fdm/shared";
 import { io as ioClient, type Socket as ClientSocketType } from "socket.io-client";
 import type { DraftJoinAck, DraftJoinPayload, DraftPickAck, DraftPickPayload } from "@fdm/shared";
-import { createSocketServer, type SocketServerHandle } from "./server.js";
+import {
+  createSocketServer,
+  type SocketServerHandle,
+  type SocketServerOptions,
+} from "./server.js";
 
 export { createTestBotMember, createTestPlayer, createTestUser };
 
@@ -128,11 +132,11 @@ export async function startFullDraftWithBotOnClock(overrides: LeagueOverrides = 
   return { league, botMembership, membersBySlot, membershipsBySlot, draft };
 }
 
-export async function startTestServer(): Promise<{
+export async function startTestServer(options: SocketServerOptions = {}): Promise<{
   handle: SocketServerHandle;
   baseUrl: string;
 }> {
-  const handle = createSocketServer();
+  const handle = createSocketServer(options);
   await new Promise<void>((resolve) => {
     handle.httpServer.listen(0, () => resolve());
   });

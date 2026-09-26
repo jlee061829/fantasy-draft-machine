@@ -39,6 +39,7 @@ const PICK_ERROR_MESSAGES: Record<SocketErrorCode, string> = {
   PLAYER_NOT_FOUND: "That player couldn't be found.",
   LEAGUE_NOT_ACCESSIBLE: "You don't have access to this league.",
   NOT_JOINED: "Still connecting to the draft room — try again in a moment.",
+  RATE_LIMITED: "Too many pick attempts — wait a moment and try again.",
   INVALID_PAYLOAD: "Something went wrong submitting that pick. Please try again.",
   INTERNAL_ERROR: "Something went wrong submitting that pick. Please try again.",
 };
