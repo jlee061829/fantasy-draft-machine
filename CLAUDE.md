@@ -755,7 +755,7 @@ Last updated: September 2026
   - BOT `displayName`s are stable ordinals (`"CPU 1"`, `"CPU 2"`, …) assigned in ascending open-slot order *during that Fill call*, continuing from however many BOT rows already exist in the league (so a later Fill — e.g. after Remove reopened slots, or after `teamCount` was raised — never reuses an ordinal already in use) — deliberately **not** named after the `draftSlot` they fill, since a pre-Draft reorder can move a bot to a different slot afterward and a slot-based name would then be actively wrong; `draftSlot`, never `displayName`, is the authoritative draft position
   - concurrency: `fillOpenLeagueSlotsWithBots` locks the identical League row `joinLeague` already locks via its own `SELECT ... FOR UPDATE` — no coordinated code change was needed for this to be true, it falls directly out of both services locking the same row. Two concurrent Fill calls for the same league: whichever commits first fills the slots open at that moment; the second re-reads fresh membership under its own lock acquisition and fills only what's still open (normally zero) — never a duplicate `draftSlot`, never more than `teamCount` total members. A concurrent HUMAN join vs. Fill resolves to exactly one of two valid outcomes depending on lock order: join-first leaves Fill one fewer slot to fill; Fill-first leaves the join to see a full league and receive the existing `LeagueFullError` — no human is ever displaced, no bot is ever silently evicted — proven by a dedicated real-Postgres concurrency test, not just reasoned about
   - added `POST /api/leagues/[leagueId]/bots/fill` and `DELETE /api/leagues/[leagueId]/bots` (`apps/web/app/api/leagues/[leagueId]/bots/{fill/route.ts,route.ts}`); neither route reads a request body — there is no legitimate client-controlled BOT field (`participantType`, `displayName`, `draftSlot`, or bot count are all server-derived), so there is nothing to validate against a schema
-  - status mappings reuse existing error classes/conventions exactly: `401` unauthenticated, `404` `LeagueNotAccessibleError`, `403` `NotLeagueOwnerError`, `409` `DraftAlreadyStartedError`; both a successful Fill/Remove and an idempotent no-op Fill/Remove return `200` (Fill does **not** use `201`, since it can legitimately create zero rows). No `BotFillConflictError` or new P2002 target-inspection path was added — the League-row lock is the product-level concurrency guarantee, and the pre-existing P2002 constraint-metadata maintenance issue remains untouched/deferred
+  - status mappings reuse existing error classes/conventions exactly: `401` unauthenticated, `404` `LeagueNotAccessibleError`, `403` `NotLeagueOwnerError`, `409` `DraftAlreadyStartedError`; both a successful Fill/Remove and an idempotent no-op Fill/Remove return `200` (Fill does **not** use `201`, since it can legitimately create zero rows). No `BotFillConflictError` or new P2002 target-inspection path was added — the League-row lock is the product-level concurrency guarantee (the separate P2002 constraint-metadata maintenance issue affecting other league services remained untouched at this point in the roadmap and was resolved later, in Phase 6 Milestone 6.1)
   - added commissioner-only pre-draft-page UI: `FillBotsForm`/`RemoveBotsForm` (`apps/web/app/leagues/[leagueId]/draft/{fill-bots-form.tsx,remove-bots-form.tsx}`), following `StartDraftForm`'s exact idle/pending/error shape; both call `router.refresh()` on success rather than constructing any optimistic BOT membership row client-side; Remove Bots is gated behind a plain `window.confirm(...)` explaining that BOT managers will be removed and their slots reopened — no modal system was introduced
   - the pre-draft page's commissioner branch now also shows a `"{n}/{teamCount} managers joined — {k} CPU managers"` line once any bot exists, and a `(BOT)` text marker (never color alone) in the draft-order list; the same marker was added to `DraftBoard`'s column header and `TeamRosterPanel`'s roster selector — all three derive it purely from `participantType === "BOT"`. This is never confused with the existing `AUTO` pick badge: `AUTO` remains tied exclusively to `Pick.wasAutopick === true`, and a BOT's own intentional pick persists `wasAutopick: false` (unchanged from Phase 5.3), so BOT picks render with no `AUTO` badge and no BOT-specific pick-level badge either. No `PickSource` was introduced
   - added a commissioner-only, pre-Draft-only **"Manage draft order"** link on the pre-draft page, pointing to `/leagues/[leagueId]` — the existing league-detail page where the existing, completely unmodified `MemberOrderForm` lives. This closes a discoverability gap found during this milestone's own verification: the backend/service layer already fully supported a commissioner filling bots, reordering the resulting mixed HUMAN/BOT membership, and moving themselves off slot 1 before starting — but the pre-draft page had no link to the page that UI lives on. No second reorder component was created, no reorder logic was duplicated, and `reorderLeagueMembers`/`startDraft` were not touched
@@ -847,10 +847,23 @@ Last updated: September 2026
   - **determinism**: two independent 4-team/15-round/60-pick runs from identical initial state produced an identical `(pickNumber, draftSlot, playerFullName, botStrategy)` sequence — no randomness exists anywhere in the selector or in strategy assignment
   - **manual real-dev verification**: a 12-team league (1 legitimate HUMAN participant, 11 BOTs) was created against the real dev database and its real seeded 1,068-player pool; Fill Bots produced the exact deterministic `BALANCED, RB_HEAVY, WR_HEAVY, HERO_RB` rotation; the HUMAN was reordered to a different draft slot and every BOT's `botStrategy` was confirmed unchanged afterward; the draft was driven to completion (180 real picks) using the real, unmodified `submitPick`/`processBotDraftTurn`; all 11 BOTs achieved a valid starting lineup, all respected `K<=1/DEF<=1/QB<=2/TE<=2`, and strategy bench shapes visibly differed (e.g. one `HERO_RB` bot finished roughly RB2/WR9). A standalone `tsx`/Node-24 package-resolution issue prevented the scratch script from importing `apps/web`'s own TypeScript service-wrapper files directly, so the script constructed the surrounding league/member/draft state via equivalent direct Prisma calls while exercising the real, unmodified `submitPick`/`processBotDraftTurn` — the actual Phase 5.6 logic under verification; normal Fill/Remove/reorder/start wrapper behavior remains covered by the automated real-Postgres suite, not re-exercised manually here. The manual script's HUMAN turns used a naive always-lowest-undrafted-id placeholder solely to advance the draft, which produced a deliberately degenerate roster — this demonstrates only that manual `submitPick` intentionally enforces no BOT lineup intelligence, and is not a representation of real HUMAN timeout `BEST_AVAILABLE` behavior (separately covered by the automated `autopick.test.ts` suite). The scratch script was deleted afterward and never committed; the created league was left in the dev database, consistent with prior milestones' precedent
   - one Prisma interactive-transaction timeout occurred once during a full `packages/database` suite run under system load and did not reproduce on either of two immediate full-suite retries — treated as non-reproducing environmental flakiness, not a functional defect
+- Phase 6 Milestone 6.1 — P2002 Unique-Constraint Handling Hardening:
+  - fixed a real, live gap in this codebase's Prisma 7 + `@prisma/adapter-pg` P2002 handling: `error.meta.target` is never populated under this stack (only `error.meta.driverAdapterError.cause.constraint.fields` is), and three Phase 2 P2002 handlers (`create-league.ts`, `join-league.ts`, `reorder-league-members.ts`) checked only `meta.target` — so their intended domain-error remapping was very likely dead code, silently falling through to an unmapped raw Prisma error instead of the intended `AlreadyMemberError`/`JoinConflictError`/`ReorderConflictError`/invite-code retry
+  - the correct extraction logic already existed in `submit-pick.ts` (Milestone 3.2/3.4) but was private to that file; relocated it, unchanged in behavior, to new `packages/database/src/prisma-errors.ts` as `uniqueConstraintFields(error)`, checking `meta.target` first (documented shape) and falling back to the real adapter-pg shape
+  - exported `uniqueConstraintFields` from `@fdm/database`'s public entry point — read-only, safe to expose, same precedent as `selectBestAvailablePlayerId`
+  - `submit-pick.ts` now imports the relocated helper instead of maintaining its own copy; call site and behavior unchanged
+  - `create-league.ts`, `join-league.ts`, and `reorder-league-members.ts` now call the shared helper instead of each maintaining their own `meta.target`-only copy; their downstream domain-error mapping (which constraint-field combination maps to which error class) is unchanged
+  - no error classes added, no HTTP status mappings changed, no schema changes, no transaction-semantics changes, no draft/pick behavior changes — this milestone touched P2002 recognition only
+  - **no production P2002 handler remains anywhere in the repo that relies on `error.meta.target` alone** — verified by a repo-wide search after the fix
+  - testing nuance discovered during this milestone: `joinLeague` and `reorderLeagueMembers` each serialize legitimate concurrent operations through a `SELECT ... FOR UPDATE` League-row lock, so by the time a transaction's own app-level pre-check runs, any earlier concurrent transaction has already committed — meaning their P2002 catch branches are defensive/structurally unreachable under normal service execution through the public functions, exactly as those files' own pre-existing comments already claimed. A contrived, deep-mocked test to force those specific branches anyway was deliberately not written, since it would exercise something the row-lock architecture doesn't allow to happen and would go beyond the smallest reasonable fix
+  - `createLeague`'s invite-code path has no equivalent row lock (two `createLeague()` calls for two different Leagues share no lock with each other), so a real collision genuinely is reachable — added a real, Postgres-backed test that forces an actual collision (via a partial mock of `generateInviteCode` that defaults to real random generation everywhere else) and verifies the retry succeeds with a fresh code
+  - added direct unit tests (`packages/database/src/prisma-errors.test.ts`) constructing real `Prisma.PrismaClientKnownRequestError` instances shaped exactly like this stack's actual adapter-pg output, proving the shared helper is verified against the real constraint-metadata shape, not an assumed one
+  - discovered, not fixed (out of this milestone's scope): `apps/web/lib/drafts/submit-pick.test.ts` has its own fourth, already-correct duplicate of this same extraction logic, used to assert on real P2002 errors forced via raw concurrent `prisma.pick.create()` calls that bypass the transaction entirely. Test-only code, not a production handler, left untouched — a candidate for a later cleanup pass to point at the new shared export instead
+  - Milestone 6.1 verification: `packages/database` 190/190 tests passing (184 base + 6 new), `apps/web` 371/371 (370 base + 1 new), `apps/socket-server` 37/37 unaffected, `packages/shared` 48/48 unaffected, workspace typecheck clean, workspace build clean (with the required development environment variables loaded)
 
 ### Current phase
 
-**Phase 5 — Bot Managers + Mock Drafts — COMPLETE**
+**Phase 6 — Hardening — IN PROGRESS (Milestone 6.1 complete)**
 
 Completed:
 
@@ -858,12 +871,16 @@ Completed:
 - Phase 2 — League Management — COMPLETE
 - Phase 3 — Realtime Draft Engine — COMPLETE (Milestones 3.1, 3.2, 3.3a, 3.3b, 3.4; see "Milestone 3.5 status" below for why there is no separate 3.5)
 - Phase 4 — Client Experience — COMPLETE (Milestones 4.1–4.6)
-- Phase 5 Milestone 5.1 — Bot Membership / Participant Data Model — COMPLETE
-- Phase 5 Milestone 5.2 — Basic Best-Available Bot Strategy — COMPLETE
-- Phase 5 Milestone 5.3 — Server-Side Bot Turn Orchestration — COMPLETE
-- Phase 5 Milestone 5.4 — Mock Draft Creation / Fill Empty Slots with Bots — COMPLETE
-- Phase 5 Milestone 5.5 — Position-Aware Bot Strategy — COMPLETE
-- Phase 5 Milestone 5.6 — Lineup-Aware Bot Strategy Variants + Phase 5 Closeout — COMPLETE
+- Phase 5 — Bot Managers + Mock Drafts — COMPLETE (Milestones 5.1–5.6)
+- Phase 6 Milestone 6.1 — P2002 Unique-Constraint Handling Hardening — COMPLETE
+
+Current Phase 6 status:
+- 6.1 — P2002 Unique-Constraint Handling Hardening — **COMPLETE**
+- 6.2 — GitHub Actions CI for existing build/typecheck/test verification — not started
+- 6.3 — Pick rate limiting (scoped narrowly to pick submission, if still desired once reached) — not started
+- 6.4 — Minimal lint tooling, conditional on explicit approval before adding the new dependency — not started
+
+**Phase 6 is not complete.** Only Milestone 6.1 has shipped. Do not treat Phase 6 as a whole as done — see "Build phases" for the current intended 6.2–6.4 ordering and for the items deliberately kept deferred rather than pulled into active Phase 6 scope (Redis/horizontal socket scaling, Playwright E2E, HTTP error-code parity, League-deletion FK cleanup, chat rate limiting, and previously deferred product features).
 
 Current Phase 5 status:
 - 5.1 — Bot Membership / Participant Data Model — **COMPLETE**
@@ -960,7 +977,6 @@ Current Phase 5 capabilities (Milestones 5.1–5.6):
 - draft/pick undo
 - roster-position enforcement, including roster-aware autopick selection, if later required
 - ML recommendation system
-- GitHub Actions CI
 - `Pick` "source" concept (`PickSource`) distinguishing MANUAL/AUTOPICK/BOT — deferred; see "Settled decisions" (already derivable today from `Pick.leagueMemberId` joined against `LeagueMember.participantType`/`Pick.wasAutopick`, with zero new columns)
 - a BOT-specific visual indicator/badge on individual picks in the draft-room UI (a BOT pick currently renders with no `AUTO` badge, since `wasAutopick: false`, and no BOT-specific pick-level badge exists either — Milestone 5.4 added a member-level `(BOT)` text marker in the draft order/board header/roster selector, which is a different thing from a pick-level badge)
 - user-selectable/configurable BOT strategy — Phase 5.6 shipped four deterministic strategy variants assigned automatically by a fixed rotation; no UI or API exists for a commissioner (or anyone) to choose or change a specific BOT's strategy
@@ -971,8 +987,9 @@ Current Phase 5 capabilities (Milestones 5.1–5.6):
 - HUMAN lineup enforcement or HUMAN draft assistance of any kind — Phase 5.6's lineup feasibility and onesie rules are exclusively BOT-only, verified by dedicated separation tests; a HUMAN's manual picks and timer-expiry autopick remain completely unrestricted by them
 - temporary human-to-CPU turn delegation (distinct from bot-owned mock-draft slots — see "Future roadmap notes")
 - tighter BOT-pick pacing than "one pick per league per sweep tick" — a long all-BOT chain currently drains at up to one pick per sweep interval (default 2000ms) per league; this is an intentional correctness-first starting point (see Milestone 5.3's notes) and was carried unchanged through Milestone 5.4, which made this pacing product-observable for the first time (a real solo mock draft with many bot slots) rather than only a theoretical concern — observed acceptable during 5.4's manual verification, but may be revisited later if real mock-draft UX demands faster pacing; any such change must remain row-lock-based, not introduce a new correctness mechanism
-- fixing League deletion's FK-ordering failure against Draft/Pick history — see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering"; not a current blocker since no delete-League feature exists, but unresolved
-- the pre-existing Prisma P2002 constraint-metadata maintenance issue (see "Known maintenance issue — Prisma P2002 constraint metadata") — unrelated to Phase 5, still unresolved
+- fixing League deletion's FK-ordering failure against Draft/Pick history — see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering"; not a current blocker since no delete-League feature exists, but unresolved; deliberately kept deferred rather than pulled into active Phase 6 scope
+- GitHub Actions CI, pick rate limiting, and minimal lint tooling — scoped as Phase 6 Milestones 6.2–6.4 respectively; not yet started (see "Build phases")
+- Redis-backed horizontal socket-server scaling, Playwright E2E coverage, HTTP error-code parity (a `code` field alongside existing HTTP error messages), and chat rate limiting — evaluated during Phase 6 planning and deliberately kept deferred rather than made active Phase 6 milestones (chat itself remains unimplemented, so there is nothing to rate-limit yet)
 
 ### Future roadmap notes (not scoped as a phase)
 
@@ -991,6 +1008,7 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
 
 - Socket authentication strategy — decide before Phase 3
 - Railway vs. Fly.io for socket-server deployment — decide before Phase 7 (Deploy; renumbered from Phase 6 when Phase 5 was reassigned to Bot Managers + Mock Drafts — see "Build phases")
+- Whether Phase 6 actually implements Redis pub/sub horizontal socket-server scaling, or whether "Non-negotiable engineering goal #4" (horizontal scalability) is explicitly relaxed/rescoped for this project — Phase 6 planning deliberately kept Redis/horizontal scaling deferred rather than active scope, since nothing about the current single-instance deployment plan concretely requires it yet; this leaves an open, unresolved tension against goal #4's current wording that should be settled explicitly (either by implementing it in a later Phase 6 milestone, moving it into Phase 7's deployment planning, or amending goal #4) rather than left silently unaddressed — decide before Phase 6 is considered complete
 
 ### Settled decisions
 
@@ -1299,7 +1317,7 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
   - BOT `LeagueMember.displayName` is a stable ordinal (`"CPU 1"`, `"CPU 2"`, …), assigned in ascending open-slot order for that Fill call and continuing from the count of BOT rows already in the league — deliberately never derived from `draftSlot`. This was a deliberate choice to avoid a slot-based name going stale after a later reorder; `draftSlot` alone is authoritative for draft position, and `displayName` never claims otherwise, at any point
   - two concurrent Fill calls, and a concurrent HUMAN `joinLeague` vs. Fill, both resolve deterministically because `joinLeague`'s own `SELECT ... FOR UPDATE` and `fillOpenLeagueSlotsWithBots`'s `authorizeLeagueOwner` lock the identical League row — no coordinated code change was required for this; it is a direct consequence of both operations already locking that row. Verified with dedicated real-Postgres concurrency tests, not merely reasoned about
   - `POST /api/leagues/[leagueId]/bots/fill` and `DELETE /api/leagues/[leagueId]/bots` accept no request body — every field either operation needs is server-derived, so there is no client-controlled BOT payload (`participantType`, `displayName`, `draftSlot`, bot count) to validate or reject
-  - status mappings reuse existing error classes unchanged: `401` unauthenticated, `404` `LeagueNotAccessibleError`, `403` `NotLeagueOwnerError`, `409` `DraftAlreadyStartedError`; a successful or idempotent-no-op Fill/Remove is `200` in every case — Fill never returns `201`, since "fill open slots" can legitimately create zero rows. No `BotFillConflictError` and no new P2002 target-inspection path was added; the League-row lock is treated as the actual product-level concurrency guarantee, and the pre-existing P2002 constraint-metadata maintenance issue remains deferred and untouched
+  - status mappings reuse existing error classes unchanged: `401` unauthenticated, `404` `LeagueNotAccessibleError`, `403` `NotLeagueOwnerError`, `409` `DraftAlreadyStartedError`; a successful or idempotent-no-op Fill/Remove is `200` in every case — Fill never returns `201`, since "fill open slots" can legitimately create zero rows. No `BotFillConflictError` and no new P2002 target-inspection path was added; the League-row lock is treated as the actual product-level concurrency guarantee (the separate P2002 constraint-metadata maintenance issue affecting other league services was resolved later, in Phase 6 Milestone 6.1)
   - **the existing `reorderLeagueMembers` requires no changes to support a mixed HUMAN/BOT membership list** — it was already written purely in terms of submitted `LeagueMember.id`s and final array order, with zero reference to `participantType`/`userId`/`displayName` anywhere in its implementation. This was verified directly with dedicated LINEAR and SNAKE real-Postgres integration tests (Fill → reorder the HUMAN off slot 1 → Start Draft → process BOT turns via the existing `processBotDraftTurn` → confirm the HUMAN becomes current at their chosen slot, including across a SNAKE round boundary), not merely asserted from reading the code
   - a commissioner is not pinned to slot 1 after league creation or after Fill; a pre-Draft reorder (via the existing, unmodified `MemberOrderForm`/`PUT /api/leagues/[leagueId]/members/order`) may move any participant, HUMAN or BOT, to any slot, and `startDraft`'s first-picker computation reads whichever `LeagueMember` occupies slot 1 at Draft-creation time with no special-casing
   - added a commissioner-only, pre-Draft-only **"Manage draft order"** link on `/leagues/[leagueId]/draft`, pointing to `/leagues/[leagueId]` (the existing league-detail page where `MemberOrderForm` lives) — a pure discoverability fix, not a new reorder feature. `MemberOrderForm` was not moved, duplicated, or modified; no new reorder API was added
@@ -1344,6 +1362,15 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
   - the mixed HUMAN/BOT scarcity boundary is precisely scoped: hard per-BOT K/DEF caps prove BOTs cannot starve each other whenever supply suffices for the BOT population, but this is **not** generalized to "total league K/DEF consumption never exceeds `teamCount`" for a mixed league — a HUMAN may legally draft duplicate K/DEF, and if HUMAN picks deplete a position a BOT needs, no reservation/reclaim mechanism exists; the draft continues via the impossible-lineup fallback instead
   - no global/cross-participant K/DEF reservation mechanism was built — deliberately rejected as unneeded complexity given per-BOT demand is capped at 1 each and the product's `teamCount` ceiling (20) sits comfortably under real seeded K/DEF supply (43/32)
   - Phase 5.6 introduced no changes to Draft-row locking, `applyPick`, turn progression, the BOT sweep, socket broadcast behavior, `BotTurnOutcome`, `wasAutopick`'s meaning, the Socket.IO protocol, `apps/socket-server`, or any UI/user-facing strategy-selection surface
+- Phase 6.1 settled decisions — P2002 Unique-Constraint Handling Hardening:
+  - `uniqueConstraintFields(error)` is the one shared P2002 constraint-field extraction helper for the whole codebase, living in `packages/database/src/prisma-errors.ts` and exported publicly from `@fdm/database` — relocated, not rewritten, from its original private home in `submit-pick.ts`; behavior is byte-for-byte unchanged (checks `error.meta.target` first, falls back to `error.meta.driverAdapterError.cause.constraint.fields` for this stack's real adapter-pg shape)
+  - `create-league.ts`, `join-league.ts`, and `reorder-league-members.ts` all call this shared helper now instead of each maintaining their own (previously `meta.target`-only, and therefore non-functional) copy; the domain-error mapping each file already had (which constraint-field combination maps to which error class) is unchanged
+  - Prisma-specific error parsing stays inside `packages/database`; it was never moved into `@fdm/shared`, consistent with `@fdm/shared` remaining persistence-independent
+  - no new error classes, no HTTP status-mapping changes, no schema changes, no transaction-semantics changes, no draft/pick behavior changes — this milestone is scoped to P2002 recognition only
+  - `joinLeague`'s and `reorderLeagueMembers`' own P2002 catch branches remain structurally defensive/unreachable under normal service execution, because both operations serialize legitimate concurrent calls through a `SELECT ... FOR UPDATE` row lock before their own app-level pre-check runs — this was already true before Phase 6.1 and is unchanged by it; no contrived deep-mocked test was written solely to force those specific branches
+  - `createLeague`'s invite-code collision path has no equivalent row lock and is genuinely reachable; it now has a real, Postgres-backed regression test forcing an actual collision and proving the retry succeeds
+  - a fourth, already-correct duplicate of this same extraction logic remains in `apps/web/lib/drafts/submit-pick.test.ts` (test-only, used to assert on real P2002 errors from raw concurrent inserts) — left untouched as out of this milestone's scope, noted as a candidate for a later cleanup pass
+  - this milestone did not touch CI, rate limiting, lint tooling, Redis/horizontal scaling, Playwright E2E, HTTP error-code parity, or League-deletion FK cleanup — see "Build phases" for how those remain sequenced/deferred within Phase 6
 
 ## Non-negotiable engineering goals
 
@@ -2018,24 +2045,24 @@ The client must never be allowed to claim an arbitrary `userId`.
 
 Expired ticket rows currently have no background cleanup process. Expiration is enforced at consumption time; cleanup may be added later if operationally necessary.
 
-### Known maintenance issue — Prisma P2002 constraint metadata
+### Known maintenance issue — Prisma P2002 constraint metadata — RESOLVED (Phase 6.1)
 
 Under the current Prisma 7 + `@prisma/adapter-pg` stack, observed P2002 errors do not reliably populate `error.meta.target`.
 
-The adapter currently exposes constraint columns through:
+The adapter instead exposes constraint columns through:
 
 `error.meta.driverAdapterError.cause.constraint.fields`
 
-Milestone 3.2's `submit-pick.ts` handles both the conventional `meta.target` shape and the observed adapter-pg shape for constraint-specific error mapping.
+Milestone 3.2's `submit-pick.ts` originally handled both the conventional `meta.target` shape and the observed adapter-pg shape for constraint-specific error mapping, but that logic was private to `submit-pick.ts`.
 
 Pre-existing Phase 2 P2002 handlers in:
 - `apps/web/lib/leagues/create-league.ts`
 - `apps/web/lib/leagues/join-league.ts`
 - `apps/web/lib/leagues/reorder-league-members.ts`
 
-still use the older constraint-target parsing assumption and were intentionally not modified during Milestone 3.2.
+used the older `meta.target`-only parsing assumption and were intentionally not modified during Milestone 3.2, pending a separate maintenance change.
 
-Fix these in a separate maintenance change rather than silently folding the cleanup into unrelated Phase 3 work.
+**Resolved in Phase 6 Milestone 6.1.** The correct extraction logic was relocated, unchanged, from `submit-pick.ts` into `packages/database/src/prisma-errors.ts` as `uniqueConstraintFields(error)` and exported publicly from `@fdm/database`. `submit-pick.ts` and all three files above now call this one shared helper instead of each maintaining (or, for the three above, incorrectly maintaining) their own copy. No error classes, HTTP status mappings, schemas, transaction semantics, or draft/pick behavior changed — only P2002 recognition itself. A repo-wide search after the fix confirmed no production P2002 handler anywhere in the codebase still relies on `meta.target` alone; see Milestone 6.1's completed-work notes for the full verification record, including the testing nuance that `joinLeague`'s and `reorderLeagueMembers`' own P2002 catch branches are structurally unreachable under their respective row locks (defensive, not exercised by normal service execution), while `createLeague`'s invite-code collision path is genuinely reachable and now has a real Postgres-backed regression test proving the retry works.
 
 ### Known issue — League deletion blocked by Pick → LeagueMember FK ordering
 
@@ -2174,7 +2201,7 @@ Status mappings (reusing existing error classes, no new ones):
 - successful Fill/Remove, including an idempotent no-op (`botsCreated`/`botsRemoved` of `0`) → `200` in every case — Fill never returns `201`, since it can legitimately create zero rows
 - unexpected internal error → existing unhandled-error (`500`) behavior
 
-No `BotFillConflictError` and no new P2002 target-inspection path were added. The League-row lock, not P2002 remapping, is the actual product-level concurrency guarantee here; the pre-existing "Known maintenance issue — Prisma P2002 constraint metadata" remains deferred and untouched.
+No `BotFillConflictError` and no new P2002 target-inspection path were added. The League-row lock, not P2002 remapping, is the actual product-level concurrency guarantee here. (The separate "Known maintenance issue — Prisma P2002 constraint metadata" affecting `create-league.ts`/`join-league.ts`/`reorder-league-members.ts` was resolved in Phase 6 Milestone 6.1, well after this milestone; Fill/Remove Bots never had a P2002 handler of their own and still don't need one.)
 
 Pre-draft UI: commissioner-only `FillBotsForm`/`RemoveBotsForm` (`apps/web/app/leagues/[leagueId]/draft/{fill-bots-form.tsx,remove-bots-form.tsx}`), following `StartDraftForm`'s existing idle/pending/error shape. Both call `router.refresh()` on success so the Server Component re-fetches authoritative `getLeagueDetail` state; neither ever constructs an optimistic BOT membership row client-side. Remove Bots requires a plain `window.confirm(...)` naming that BOT managers will be removed and their slots reopened — no modal system was introduced. Non-commissioners never see either control.
 
@@ -2867,8 +2894,23 @@ Phase 5 is complete because:
 - full workspace test/typecheck/build all pass
 - real mock-draft behavior was verified acceptable against real seeded data, not only synthetic fixtures
 
-**Phase 6 — Hardening.** Redis pub/sub adapter. Rate limiting on picks and chat. Structured error responses. Playwright E2E covering a full draft. GitHub Actions running typecheck, lint, and tests.
-*Done when: CI is green and two socket instances run safely against one Redis.*
+**Phase 6 — Hardening — IN PROGRESS.** Goal: close a real, live correctness gap discovered in existing P2002 handling, then add the production-readiness scaffolding (CI, narrowly-scoped pick rate limiting, minimal lint tooling) that realistically needs to exist before Phase 7 deployment — without expanding into product features, without introducing infrastructure the current single-instance architecture doesn't concretely need yet, and without silently reopening deferred decisions.
+
+Milestones:
+- **6.1 P2002 Unique-Constraint Handling Hardening — COMPLETE.** See "Known maintenance issue — Prisma P2002 constraint metadata" and this milestone's own completed-work notes above for full detail.
+- **6.2 GitHub Actions CI for existing build/typecheck/test verification — not started.** Wire up the workspace's already-passing `typecheck`/`test` scripts (and, per the cross-package dependency-build convention, the required `packages/shared`/`packages/database` build step before them) into a workflow that runs on every push, using a real Postgres service matching `fantasy_draft_test`'s setup. This is verification plumbing for behavior that already exists and already passes locally — not new product behavior.
+- **6.3 Pick rate limiting — not started.** Scoped narrowly to pick submission (`draft:pick` and `POST /api/leagues/[leagueId]/draft/picks`), and only if still desired once this milestone is actually reached — the Draft-row lock and turn-ownership check already prevent any correctness impact from repeated off-turn submissions; this would be abuse-mitigation hardening only, not a correctness fix.
+- **6.4 Minimal lint tooling — not started, conditional on explicit approval.** No lint tooling (ESLint or otherwise) exists anywhere in this repository today, despite being implied by this document's own CI stack-table row. Adding one means introducing a new dependency, which per "Working preferences" requires asking first — this milestone does not proceed without that explicit go-ahead.
+
+Deliberately kept deferred rather than pulled into active Phase 6 scope (see "Not yet implemented"):
+- Redis pub/sub / horizontal socket-server scaling — the current single-instance architecture is not being changed without a concrete, current deployment need forcing it; revisit only if Phase 7's actual deployment target requires more than one long-lived socket-server process
+- Playwright E2E covering a full draft
+- HTTP error-code parity (a machine-readable `code` field alongside existing HTTP error messages, mirroring the socket protocol's `SocketErrorCode`)
+- League-deletion FK-ordering cleanup (see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering") — no delete-League feature exists yet to make this a current blocker
+- chat rate limiting — chat itself remains unimplemented, so there is nothing to rate-limit
+- previously deferred product features (see "Not yet implemented" and "Future roadmap notes")
+
+*Done when: 6.1–6.4 are complete — the P2002 handling gap is closed, CI is green on every push, pick submission is protected against abusive repeated requests, and lint tooling (if approved) runs in CI.*
 
 **Phase 7 — Deploy.** Next.js to Vercel. Socket server, Postgres, Redis to Railway or Fly. Environment config, CORS, production migrations, a real URL.
 *Done when: you can send a friend the link and draft with them.*

@@ -3,8 +3,8 @@ import {
   JoinConflictError,
   LeagueFullError,
   LeagueNotFoundError,
-  Prisma,
   prisma,
+  uniqueConstraintFields,
 } from "@fdm/database";
 
 export interface JoinLeagueResult {
@@ -16,17 +16,6 @@ export interface JoinLeagueResult {
     id: string;
     draftSlot: number;
   };
-}
-
-function uniqueConstraintTargets(error: unknown): string[] | null {
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002" &&
-    Array.isArray(error.meta?.target)
-  ) {
-    return error.meta.target as string[];
-  }
-  return null;
 }
 
 // Mirrors the row-lock pattern the draft engine's pick-submission path will
@@ -87,7 +76,11 @@ export async function joinLeague(
       },
     };
   } catch (error) {
-    const target = uniqueConstraintTargets(error);
+    // Phase 6.1: uniqueConstraintFields (packages/database/src/prisma-errors.ts)
+    // handles this stack's actual Prisma 7 + @prisma/adapter-pg P2002 shape —
+    // meta.target is never populated here, so this previously never fired
+    // for a real constraint violation.
+    const target = uniqueConstraintFields(error);
     if (target) {
       // Legitimately the same condition the app-level check above already
       // guards against, so it maps to the same domain error.

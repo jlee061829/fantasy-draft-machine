@@ -32,3 +32,10 @@ export { processBotDraftTurn, findActiveBotTurnLeagueIds } from "./drafts/bot-tu
 export * from "./drafts/get-draft-state.js";
 export * from "./leagues/errors.js";
 export * from "./auth/socket-ticket.js";
+// uniqueConstraintFields (Phase 6.1) is read-only error-parsing logic, not a
+// mutation primitive — safe to expose, like selectBestAvailablePlayerId
+// above. This is what lets apps/web's league services (create-league.ts,
+// join-league.ts, reorder-league-members.ts) recognize this stack's real
+// P2002 constraint-metadata shape instead of each maintaining their own
+// (previously incorrect) copy of the check.
+export { uniqueConstraintFields } from "./prisma-errors.js";

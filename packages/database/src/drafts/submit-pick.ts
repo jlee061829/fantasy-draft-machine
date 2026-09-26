@@ -1,6 +1,8 @@
-import { Prisma, type DraftStatus, type DraftType } from "../generated/prisma/client.js";
+import type { DraftStatus, DraftType } from "../generated/prisma/client.js";
+import type { Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../client.js";
 import { getPickerForPickNumber } from "@fdm/shared";
+import { uniqueConstraintFields } from "../prisma-errors.js";
 import { LeagueNotAccessibleError } from "../leagues/errors.js";
 import {
   DraftNotActiveError,
@@ -56,31 +58,11 @@ export interface DraftProgressionLeagueConfig {
   timerSeconds: number;
 }
 
-// Prisma's documented P2002 shape puts the violated columns at
-// `error.meta.target`, and that's what every other P2002 handler in this
-// codebase (join-league.ts, reorder-league-members.ts, create-league.ts)
-// reads. Under this project's actual Prisma 7 + @prisma/adapter-pg setup,
-// though, `meta.target` is never populated — the columns instead show up
-// at `error.meta.driverAdapterError.cause.constraint.fields`, quoted
-// (e.g. `"draftId"`). Checking `target` first keeps this forward-compatible
-// with the documented shape should the adapter's error normalization
-// change; the driverAdapterError fallback is what actually fires today.
-function uniqueConstraintFields(error: unknown): string[] | null {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
-    return null;
-  }
-  const meta = error.meta as
-    | { target?: unknown; driverAdapterError?: { cause?: { constraint?: { fields?: unknown } } } }
-    | undefined;
-  if (Array.isArray(meta?.target)) {
-    return meta.target as string[];
-  }
-  const fields = meta?.driverAdapterError?.cause?.constraint?.fields;
-  if (Array.isArray(fields)) {
-    return fields.map((field) => String(field).replace(/^"|"$/g, ""));
-  }
-  return null;
-}
+// uniqueConstraintFields (P2002 constraint-field extraction, handling this
+// stack's actual @prisma/adapter-pg error shape) now lives in
+// ../prisma-errors.js — Phase 6.1 relocated it out of this file so every
+// P2002 handler in the codebase, not just this one, recognizes the real
+// error shape instead of only the documented-but-unpopulated `meta.target`.
 
 // Shared by submitPick (manual picks, Milestone 3.2) and processExpiredDraftTurn
 // (autopicks, Milestone 3.4) — the single place that locks a League's Draft

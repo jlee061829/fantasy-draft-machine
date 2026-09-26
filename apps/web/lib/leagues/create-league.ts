@@ -1,5 +1,5 @@
 import type { DraftType, ScoringFormat } from "@fdm/database";
-import { Prisma, prisma } from "@fdm/database";
+import { prisma, uniqueConstraintFields } from "@fdm/database";
 import { generateInviteCode } from "./invite-code";
 import type { CreateLeagueApiInput } from "./schema";
 
@@ -36,13 +36,14 @@ export interface CreateLeagueResult {
 
 const MAX_INVITE_CODE_ATTEMPTS = 5;
 
+// Phase 6.1: uniqueConstraintFields (packages/database/src/prisma-errors.ts)
+// handles this stack's actual Prisma 7 + @prisma/adapter-pg P2002 shape —
+// meta.target is never populated under this stack, so a check against it
+// alone (this function's previous implementation) never actually caught a
+// real collision, silently falling through to an unmapped 500 instead of
+// retrying.
 function isInviteCodeCollision(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002" &&
-    Array.isArray(error.meta?.target) &&
-    (error.meta.target as string[]).includes("inviteCode")
-  );
+  return uniqueConstraintFields(error)?.includes("inviteCode") ?? false;
 }
 
 // League creation and the creator's membership must never exist

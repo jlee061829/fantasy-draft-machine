@@ -1,4 +1,4 @@
-import { Prisma, prisma } from "@fdm/database";
+import { prisma, uniqueConstraintFields } from "@fdm/database";
 import { DraftAlreadyStartedError } from "@fdm/database";
 import { getDraftForLeague } from "../drafts/get-draft-for-league";
 import { authorizeLeagueOwner } from "./authorize-commissioner";
@@ -17,17 +17,6 @@ export interface ReorderLeagueMembersResult {
     image: string | null;
     draftSlot: number;
   }>;
-}
-
-function uniqueConstraintTargets(error: unknown): string[] | null {
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002" &&
-    Array.isArray(error.meta?.target)
-  ) {
-    return error.meta.target as string[];
-  }
-  return null;
 }
 
 // The client submits the desired FULL order as LeagueMember ids (not
@@ -122,7 +111,12 @@ export async function reorderLeagueMembers(
     // Reserved for a (leagueId, draftSlot) unique-constraint hit during the
     // two-phase update above, which should be unreachable given the
     // negative-offset strategy. Mirrors JoinConflictError's role for joins.
-    if (uniqueConstraintTargets(error)?.includes("draftSlot")) {
+    //
+    // Phase 6.1: uniqueConstraintFields (packages/database/src/prisma-errors.ts)
+    // handles this stack's actual Prisma 7 + @prisma/adapter-pg P2002 shape —
+    // meta.target is never populated here, so this previously never fired
+    // for a real constraint violation.
+    if (uniqueConstraintFields(error)?.includes("draftSlot")) {
       throw new ReorderConflictError();
     }
     throw error;
