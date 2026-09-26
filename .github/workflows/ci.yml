@@ -1,0 +1,103 @@
+# Reproduces the project's existing local verification gate:
+# fresh workspace build -> workspace typecheck -> each package's test suite.
+#
+# No secrets are used. Every credential below is a disposable value for the
+# ephemeral Postgres service container or a fake value that only satisfies
+# apps/web/lib/env.ts validation during `next build`.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Only fantasy_draft_test exists in CI (POSTGRES_DB below); there is no
+  # fantasy_draft dev database for anything to accidentally target.
+  TEST_DATABASE_URL: postgresql://fantasy_user:fantasy_password@localhost:5432/fantasy_draft_test
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: fantasy_user
+          POSTGRES_PASSWORD: fantasy_password
+          POSTGRES_DB: fantasy_draft_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fantasy_user -d fantasy_draft_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Must run before setup-node so `cache: pnpm` can find the pnpm store.
+      # Version comes from the root package.json "packageManager" field.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # .env.test files are gitignored (.env.*). Each DB-backed package's test
+      # script unsets any inherited DATABASE_URL and loads its own .env.test,
+      # so CI recreates them with the same values used locally.
+      - name: Write .env.test files
+        run: |
+          printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL" > packages/database/.env.test
+          printf 'DATABASE_URL=%s\n' "$TEST_DATABASE_URL" > apps/web/.env.test
+          printf 'DATABASE_URL=%s\nPORT=4001\nSOCKET_CORS_ORIGIN=http://localhost:3000\n' "$TEST_DATABASE_URL" > apps/socket-server/.env.test
+
+      - name: Apply Prisma migrations to fantasy_draft_test
+        run: pnpm --filter @fdm/database exec prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+
+      # Builds @fdm/shared -> @fdm/database -> apps in dependency order, so
+      # consumers never resolve stale dist output, and `next build` generates
+      # the .next/types route types that apps/web's typecheck depends on.
+      - name: Build workspace
+        run: pnpm build
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+          AUTH_SECRET: ci-not-a-real-secret
+          AUTH_GITHUB_ID: ci-fake-github-client-id
+          AUTH_GITHUB_SECRET: ci-fake-github-client-secret
+          NEXT_PUBLIC_SOCKET_SERVER_URL: http://localhost:4000
+
+      - name: Typecheck workspace
+        run: pnpm typecheck
+
+      # Sequential on purpose: the DB-backed suites share fantasy_draft_test
+      # and truncate it, so they must never run concurrently.
+      - name: Test @fdm/shared
+        run: pnpm --filter @fdm/shared test
+
+      - name: Test @fdm/database
+        run: pnpm --filter @fdm/database test
+
+      - name: Test @fdm/socket-server
+        run: pnpm --filter @fdm/socket-server test
+
+      - name: Test @fdm/web
+        run: pnpm --filter @fdm/web test
