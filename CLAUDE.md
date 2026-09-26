@@ -860,10 +860,27 @@ Last updated: September 2026
   - added direct unit tests (`packages/database/src/prisma-errors.test.ts`) constructing real `Prisma.PrismaClientKnownRequestError` instances shaped exactly like this stack's actual adapter-pg output, proving the shared helper is verified against the real constraint-metadata shape, not an assumed one
   - discovered, not fixed (out of this milestone's scope): `apps/web/lib/drafts/submit-pick.test.ts` has its own fourth, already-correct duplicate of this same extraction logic, used to assert on real P2002 errors forced via raw concurrent `prisma.pick.create()` calls that bypass the transaction entirely. Test-only code, not a production handler, left untouched — a candidate for a later cleanup pass to point at the new shared export instead
   - Milestone 6.1 verification: `packages/database` 190/190 tests passing (184 base + 6 new), `apps/web` 371/371 (370 base + 1 new), `apps/socket-server` 37/37 unaffected, `packages/shared` 48/48 unaffected, workspace typecheck clean, workspace build clean (with the required development environment variables loaded)
+- Phase 6 Milestone 6.2 — GitHub Actions CI:
+  - added `.github/workflows/ci.yml` — the only file changed; no package scripts, `.gitignore`, application code, or tests were modified, and no root `test` script was added
+  - triggers on `push` and `pull_request`; `permissions: contents: read`; a same-ref concurrency group (`ci-${{ github.ref }}`) cancels superseded runs; one `ubuntu-latest` verification job
+  - PostgreSQL 17 service container (`fantasy_user`/`fantasy_password`) with a `pg_isready` health check; `POSTGRES_DB=fantasy_draft_test` is the **only** database CI creates — the dev database `fantasy_draft` does not exist in CI, so nothing can accidentally target it. `assertUsingTestDatabase()` is unchanged
+  - `.env.test` files remain gitignored (`.env.*`); CI writes the three required files at runtime with the same values used locally — `packages/database` and `apps/web` get `DATABASE_URL` only; `apps/socket-server` additionally gets `PORT=4001` and `SOCKET_CORS_ORIGIN=http://localhost:3000`. No AUTH values are placed in `.env.test` — tests do not need them (every web test that touches auth mocks it)
+  - no GitHub Secrets and no real OAuth credentials are required. The build step alone receives deterministic fake `AUTH_SECRET`/`AUTH_GITHUB_ID`/`AUTH_GITHUB_SECRET` values (needed only because `apps/web/lib/env.ts` validates them during `next build`), plus `NEXT_PUBLIC_SOCKET_SERVER_URL=http://localhost:4000` and the test `DATABASE_URL`
+  - Prisma setup applies the checked-in migrations with `prisma migrate deploy` (`DATABASE_URL` explicitly pointing at `fantasy_draft_test`); CI does not use `prisma migrate dev`, database seeding, Redis, Playwright, or lint tooling
+  - the tracked generated Prisma client under `packages/database/src/generated/prisma/` is sufficient for build/typecheck/tests; CI does not run `prisma generate`
+  - order: (1) `pnpm install --frozen-lockfile` (pnpm version from the root `packageManager` via `pnpm/action-setup`, Node 24 via `actions/setup-node` with pnpm caching); (2) write `.env.test` files; (3) `prisma migrate deploy`; (4) `pnpm build`; (5) `pnpm typecheck`; (6) `@fdm/shared` tests; (7) `@fdm/database` tests; (8) `@fdm/socket-server` tests; (9) `@fdm/web` tests
+  - package test suites run as separate, sequential steps because the DB-backed suites share and truncate `fantasy_draft_test`; separate steps also make failures attributable to one package
+  - `pnpm build` runs before typecheck and tests from a checkout with no `dist`/`.next`, so `@fdm/shared`/`@fdm/database` consumers can never resolve stale cross-package `dist` output (see "Integration testing conventions"); it also produces the Next.js-generated `.next/types` route types (`RouteContext`) that `apps/web`'s typecheck requires on a fresh checkout — which is why typecheck must follow the build
+- Milestone 6.2 verification:
+  - local clean-environment reproduction of the exact CI command sequence — all `dist` directories and `apps/web/.next` deleted first, every command run under `env -i PATH=… HOME=…` so no direnv-exported variables (including real AUTH_* values or the dev `DATABASE_URL`) were inherited: `packages/shared` 48/48, `packages/database` 190/190, `apps/socket-server` 37/37, `apps/web` 371/371 (with no AUTH_* set), workspace typecheck PASS, workspace build PASS (fake AUTH values only)
+  - all five migrations applied successfully to a fresh, empty PostgreSQL database (a throwaway database, dropped afterward), including the hand-written `LeagueMember` participant-shape `CHECK` constraint
+  - GitHub Actions: commit `2cb3052`, run `36263875112`, event `push`, result PASS — all 14 workflow steps succeeded, including all four test steps; no CI-only failures, retries, timeout changes, or test modifications were required
+  - exact test counts were confirmed locally using the exact CI command sequence; the GitHub Actions run itself is confirmed green (per-step conclusions retrieved via the public API), but its raw logs were not programmatically retrieved (the job-logs endpoint requires authentication and `gh` was unavailable), so CI-side test counts were not independently extracted
+  - `apps/web/next-env.d.ts`/`tsconfig.tsbuildinfo` regenerated by the local build were restored via `git checkout --` and are not part of the milestone
 
 ### Current phase
 
-**Phase 6 — Hardening — IN PROGRESS (Milestone 6.1 complete)**
+**Phase 6 — Hardening — IN PROGRESS (Milestones 6.1 and 6.2 complete)**
 
 Completed:
 
@@ -873,14 +890,15 @@ Completed:
 - Phase 4 — Client Experience — COMPLETE (Milestones 4.1–4.6)
 - Phase 5 — Bot Managers + Mock Drafts — COMPLETE (Milestones 5.1–5.6)
 - Phase 6 Milestone 6.1 — P2002 Unique-Constraint Handling Hardening — COMPLETE
+- Phase 6 Milestone 6.2 — GitHub Actions CI — COMPLETE
 
 Current Phase 6 status:
 - 6.1 — P2002 Unique-Constraint Handling Hardening — **COMPLETE**
-- 6.2 — GitHub Actions CI for existing build/typecheck/test verification — not started
-- 6.3 — Pick rate limiting (scoped narrowly to pick submission, if still desired once reached) — not started
-- 6.4 — Minimal lint tooling, conditional on explicit approval before adding the new dependency — not started
+- 6.2 — GitHub Actions CI for existing build/typecheck/test verification — **COMPLETE**
+- 6.3 — Pick rate limiting (scoped narrowly to pick submission, if still desired once reached) — NOT STARTED
+- 6.4 — Minimal lint tooling, conditional on explicit approval before adding the new dependency — NOT STARTED
 
-**Phase 6 is not complete.** Only Milestone 6.1 has shipped. Do not treat Phase 6 as a whole as done — see "Build phases" for the current intended 6.2–6.4 ordering and for the items deliberately kept deferred rather than pulled into active Phase 6 scope (Redis/horizontal socket scaling, Playwright E2E, HTTP error-code parity, League-deletion FK cleanup, chat rate limiting, and previously deferred product features).
+**Phase 6 is not complete.** Milestones 6.1 and 6.2 have shipped. Do not treat Phase 6 as a whole as done — see "Build phases" for the current intended 6.3–6.4 ordering and for the items deliberately kept deferred rather than pulled into active Phase 6 scope (Redis/horizontal socket scaling, Playwright E2E, HTTP error-code parity, League-deletion FK cleanup, chat rate limiting, and previously deferred product features).
 
 Current Phase 5 status:
 - 5.1 — Bot Membership / Participant Data Model — **COMPLETE**
@@ -988,7 +1006,7 @@ Current Phase 5 capabilities (Milestones 5.1–5.6):
 - temporary human-to-CPU turn delegation (distinct from bot-owned mock-draft slots — see "Future roadmap notes")
 - tighter BOT-pick pacing than "one pick per league per sweep tick" — a long all-BOT chain currently drains at up to one pick per sweep interval (default 2000ms) per league; this is an intentional correctness-first starting point (see Milestone 5.3's notes) and was carried unchanged through Milestone 5.4, which made this pacing product-observable for the first time (a real solo mock draft with many bot slots) rather than only a theoretical concern — observed acceptable during 5.4's manual verification, but may be revisited later if real mock-draft UX demands faster pacing; any such change must remain row-lock-based, not introduce a new correctness mechanism
 - fixing League deletion's FK-ordering failure against Draft/Pick history — see "Known issue — League deletion blocked by Pick → LeagueMember FK ordering"; not a current blocker since no delete-League feature exists, but unresolved; deliberately kept deferred rather than pulled into active Phase 6 scope
-- GitHub Actions CI, pick rate limiting, and minimal lint tooling — scoped as Phase 6 Milestones 6.2–6.4 respectively; not yet started (see "Build phases")
+- pick rate limiting and minimal lint tooling — scoped as Phase 6 Milestones 6.3–6.4 respectively; not yet started (see "Build phases"). GitHub Actions CI (6.2) is complete; it runs build/typecheck/tests only — no lint step exists until 6.4
 - Redis-backed horizontal socket-server scaling, Playwright E2E coverage, HTTP error-code parity (a `code` field alongside existing HTTP error messages), and chat rate limiting — evaluated during Phase 6 planning and deliberately kept deferred rather than made active Phase 6 milestones (chat itself remains unimplemented, so there is nothing to rate-limit yet)
 
 ### Future roadmap notes (not scoped as a phase)
@@ -1371,6 +1389,15 @@ Ideas discussed for a possible future phase, not yet scoped, designed, or implem
   - `createLeague`'s invite-code collision path has no equivalent row lock and is genuinely reachable; it now has a real, Postgres-backed regression test forcing an actual collision and proving the retry succeeds
   - a fourth, already-correct duplicate of this same extraction logic remains in `apps/web/lib/drafts/submit-pick.test.ts` (test-only, used to assert on real P2002 errors from raw concurrent inserts) — left untouched as out of this milestone's scope, noted as a candidate for a later cleanup pass
   - this milestone did not touch CI, rate limiting, lint tooling, Redis/horizontal scaling, Playwright E2E, HTTP error-code parity, or League-deletion FK cleanup — see "Build phases" for how those remain sequenced/deferred within Phase 6
+- Phase 6.2 settled decisions — GitHub Actions CI:
+  - CI reproduces the existing local verification gate only (build → typecheck → tests); it is not a place to introduce new checks, tooling, or infrastructure
+  - CI creates only `fantasy_draft_test`; the dev database `fantasy_draft` never exists in CI
+  - `.env.test` files stay gitignored and are written at runtime by the workflow; the existing `.env.*` ignore policy is unchanged
+  - no GitHub Secrets or real OAuth credentials; build-only AUTH variables use deterministic fake values
+  - migrations are applied with `prisma migrate deploy`, never `prisma migrate dev`; CI never seeds
+  - CI relies on the tracked generated Prisma client and does not run `prisma generate`
+  - `pnpm build` (the real workspace build, not `next typegen`) always precedes `pnpm typecheck` and tests
+  - package test suites are separate, sequential steps; there is no root `test` script, and the DB-backed suites must not run concurrently
 
 ## Non-negotiable engineering goals
 
@@ -2898,9 +2925,9 @@ Phase 5 is complete because:
 
 Milestones:
 - **6.1 P2002 Unique-Constraint Handling Hardening — COMPLETE.** See "Known maintenance issue — Prisma P2002 constraint metadata" and this milestone's own completed-work notes above for full detail.
-- **6.2 GitHub Actions CI for existing build/typecheck/test verification — not started.** Wire up the workspace's already-passing `typecheck`/`test` scripts (and, per the cross-package dependency-build convention, the required `packages/shared`/`packages/database` build step before them) into a workflow that runs on every push, using a real Postgres service matching `fantasy_draft_test`'s setup. This is verification plumbing for behavior that already exists and already passes locally — not new product behavior.
-- **6.3 Pick rate limiting — not started.** Scoped narrowly to pick submission (`draft:pick` and `POST /api/leagues/[leagueId]/draft/picks`), and only if still desired once this milestone is actually reached — the Draft-row lock and turn-ownership check already prevent any correctness impact from repeated off-turn submissions; this would be abuse-mitigation hardening only, not a correctness fix.
-- **6.4 Minimal lint tooling — not started, conditional on explicit approval.** No lint tooling (ESLint or otherwise) exists anywhere in this repository today, despite being implied by this document's own CI stack-table row. Adding one means introducing a new dependency, which per "Working preferences" requires asking first — this milestone does not proceed without that explicit go-ahead.
+- **6.2 GitHub Actions CI for existing build/typecheck/test verification — COMPLETE.** `.github/workflows/ci.yml` runs frozen-lockfile install → `.env.test` creation → `prisma migrate deploy` → `pnpm build` → `pnpm typecheck` → the four package test suites sequentially, on `push` and `pull_request`, against a PostgreSQL 17 service containing only `fantasy_draft_test`. Verification plumbing for behavior that already existed and already passed locally — not new product behavior. See this milestone's own completed-work notes above for full detail.
+- **6.3 Pick rate limiting — NOT STARTED.** Scoped narrowly to pick submission (`draft:pick` and `POST /api/leagues/[leagueId]/draft/picks`), and only if still desired once this milestone is actually reached — the Draft-row lock and turn-ownership check already prevent any correctness impact from repeated off-turn submissions; this would be abuse-mitigation hardening only, not a correctness fix.
+- **6.4 Minimal lint tooling — NOT STARTED, conditional on explicit approval.** No lint tooling (ESLint or otherwise) exists anywhere in this repository today, despite being implied by this document's own CI stack-table row. Adding one means introducing a new dependency, which per "Working preferences" requires asking first — this milestone does not proceed without that explicit go-ahead.
 
 Deliberately kept deferred rather than pulled into active Phase 6 scope (see "Not yet implemented"):
 - Redis pub/sub / horizontal socket-server scaling — the current single-instance architecture is not being changed without a concrete, current deployment need forcing it; revisit only if Phase 7's actual deployment target requires more than one long-lived socket-server process
